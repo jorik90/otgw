@@ -13,7 +13,7 @@
 ;5) Measure and report voltages detected on the Opentherm interfaces
 ;6) Measure periods of no activity on the opentherm lines.
 ;
-#define		version		"2.2.1"
+#define		version		"2.3"
 
 		__config	H'8007', B'00101111111100'
 		__config	H'8008', B'11101011111111'
@@ -68,6 +68,8 @@ flags		res	1	;Flags to be used by different tests
 txtemp		res	1
 txhead		res	1
 txtail		res	1
+txflags		res	1
+#define		printpending	txflags,0
 
 loopcounter	res	1
 temp		res	1
@@ -94,6 +96,11 @@ supplyh		res	1
 seccount	res	1
 
 quarter		res	1
+
+output		res	1
+mask		res	1
+
+delaycount	res	1
 
 Bank1data	udata
 LineVoltage	res	1	;The measured voltage on the thermostat input
@@ -129,8 +136,7 @@ buffertail	res	1
 #define		avail		flags,0
 #define		measure		flags,1
 #define		leadingzero	flags,2
-#define		printpending	flags,3
-#define		decimaldot	flags,4
+#define		decimaldot	flags,3
 
 ;Variables used by test 5
 testdata	udata_ovr
@@ -378,7 +384,7 @@ MainLoop	bcf	INTCON,GIE	;Disable interrupts
 		movlb	0		;Bank 0
 		call	GetString
 		skpnc
-		bra	BadTest
+		goto	DebugCommand
 		movwf	testnum
 		sublw	MAXTEST
 		sublw	MAXTEST
@@ -549,7 +555,8 @@ CheckThermostat	bcf	PIR1,ADIF
 OpenCircuit	btfsc	NoThermostat
 		bra	TCheckReturn
 		bsf	NoThermostat	;Thermostat has been disconnected
-SetupCompModule	banksel	CM1CON0		;Bank 2
+SetupCompModule
+		banksel	CM1CON0		;Bank 2
 		;Bit 7 CxINTP = 0 - No interrupt on positive edge
 		;Bit 6 CxINTN = 0 - No interrupt on negative edge
 		;Bit 5-4 = 1 - CxVP connects to DAC voltage reference
@@ -807,7 +814,7 @@ BitLenCleanUp
 
 ;Test 4:
 LoopDelay
-		banksel	CM1CON0		;Bnak 2
+		banksel	CM1CON0		;Bank 2
 		bcf	CM1CON0,C1OE	;Disconnect comparator 1 output
 		bcf	CM2CON0,C2OE	;Disconnect comparator 2 output
 		banksel	PORTA		;Bank 0
@@ -1341,7 +1348,8 @@ TempSensor	;Perform some checks of the I/O pins. First the power line
 		banksel	PORTA
 		btfss	PORTA,RA6	;Check the power line is high
 		bra	F_TempShortA6
-		call	TempSensorDelay	;Keep the power stable for a while
+		movlw	1
+		call	Delay		;Keep the power stable for a while
 		;Next, check the data line
 		banksel	LATA
 		bsf	LATA,LATA7	;Prepare data line: high
@@ -1349,107 +1357,56 @@ TempSensor	;Perform some checks of the I/O pins. First the power line
 		bcf	TRISA,TRISA7	;Make the data line output
 		banksel	PORTA
 		btfss	PORTA,RA7	;Check the data line is high
-		bra	F_TempShortA7
+		bra	F_TempShortA7	;Short between data line and ground
 		bcf	PORTA,RA7	;Make the data line low
-		btfsc	PORTA,RA7	;Check the data line is low
-		bra	F_TempShortA7
-		movlw	8
-		movwf	loopcounter
-		banksel	TRISA
+		movlw	1
+		call	Delay		;Keep the signals stable for a while
+		btfss	PORTA,RA7	;Power is pulling the data line high?
+		btfss	PORTA,RA6	;Data line not pulling the power low?
+		bra	F_TempShortA7	;Short between data line and power
+		;Measure the rise time achieved by the pullup resistor
+		banksel	APFCON0		;Bank 2
+		bsf	APFCON0,CCP2SEL
+		banksel	CCP2CON		;Bank 5
+		movlw	b'0101'
+		movwf	CCP2CON
+		banksel	T1CON		;Bank 0
+		clrf	T1CON		;Fosc/4 - Can't use Fosc, unfortunately
+		clrf	TMR1L
+		movlw	-1
+		movwf	TMR1H
+		bcf	PIR1,TMR1IF
+		bcf	PIR2,CCP2IF
+		bsf	T1CON,TMR1ON	;Start the timer
+		banksel	TRISA		;Bank 1
 		bsf	TRISA,TRISA7	;Make the data line input
-		banksel	PORTA
-pulluploop	rlf	PORTA,W		;Put RA7 into the carry bit
-		rlf	temp,F		;Store the sample
-		decfsz	loopcounter,F
-		bra	pulluploop	;Repeat 8 times
-;From MSB to LSB there should now be zero or more 0 bits, followed by 1 or more
-;1 bits. In other words, the value should be 2^n - 1, but not 0. To check if a
-;number X is 2^n - 1, perform a boolean AND of X and X+1. Result should be 0.
-		tstf	temp
-		skpnz
-		bra	F_TempPullUp	;The data line remained low
-		incf	temp,W
-		andwf	temp,W		;Check for 2^n - 1
-		skpz
-		bra	F_TempPullUp	;The data line fluctuated
-
+		banksel	PIR1		;Bank 0
+PullupLoop	btfsc	PIR1,TMR1IF
+		bra	F_TempPullUp
+		btfss	PIR2,CCP2IF
+		bra	PullupLoop
+		banksel	CCP2CON		;Bank 5
+		clrf	CCP2CON		;Prevent changes to the captured value
+		movlw	P_PullUp
+		call	Print		;Bank 0
+		banksel	CCPR2L		;Bank 5
+		movfw	CCPR2L
+		movlb	0		;Bank 0
+		addlw	-3		;Time spent releasing the data line
+		skpc
+		clrw			;Protect against going negative
+		call	PrintByte
+		movlw	P_MicroSec
+		call	Print
+		;Go through all steps to perform a temperature measurement
 		clrf	flags		;Clear all flags
 		clrf	sensorstage	;Reset the state machine
-		call	TempSensorSteps
-		btfsc	tempfail
-		bra	TempSensorFail
-		movlw	P_SensorFound
-		call	Print
-		movlw	P_DS18S20
-		btfsc	temp18b20
-		movlw	P_DS18B20
-		call	Print
-		call	PrintNewline
-		movlw	ROMCode
-		movwf	FSR0L
-		clrf	FSR0H
-		movlw	8
-		movwf	loopcounter
-		movlw	P_ROMCode
-		call	Print
-TempSensorPrL1	call	PrintChar
-		moviw	FSR0++
-		call	PrintHex
-		decfsz	loopcounter,F
-		bra	TempSensorPrL1
-		call	PrintNewline
-		movlw	P_Measurement
-		call	Print
-		call	PrintFloat
-TempSensorDone	call	PrintNewline
-		banksel	TRISA
-		bsf	TRISA,RA6	;Release GPIO1
-		bsf	TRISA,RA7	;Release GPIO2
-		banksel	PORTA
-		return
-
-TempSensorFail	movfw	temp
-		andlw	0x7f
-		addlw	-1
-		skpnz
-		bra	F_TempDetect	;Failed at step 0: No presence pulse 
-		addlw	-6
-		skpnz
-		bra	F_TempSensor	;Failed at step 6: Read family code
-		addlw	-12
-		skpnz
-		bra	F_TempCRC	;Failed at step 18: Read CRC
-		movlw	P_TempFailed
-		call	Print
-		movfw	temp
-		andlw	0x7f
-		call	PrintByte
-		bra	TempSensorDone
-F_TempShortA6	movlw	P_TempShortA6
-		bra	TempSensorPrint
-F_TempShortA7	movlw	P_TempShortA7
-		bra	TempSensorPrint
-F_TempPullUp	movlw	P_TempPullUp
-		call	Print
-		call	PrintChar
-		movfw	temp
-		call	PrintHex
-		bra	TempSensorDone
-F_TempDetect	movlw	P_TempDetect
-		bra	TempSensorPrint
-F_TempSensor	movlw	P_TempSensor	;Happens with DS18B20 + DS18S20
-		bra	TempSensorPrint
-F_TempCRC	movlw	P_TempAddrCRC	;Happens with more than one device
-		btfsc	tempaddr
-		movlw	P_TempSPadCRC
-TempSensorPrint	call	Print
-		bra	TempSensorDone
-
+		clrf	loopcounter
 TempSensorSteps	setz			;Zero bit must be set to proceed
 		lcall	Temperature	;Perform one step of the sequence
 		pagesel	$
 		btfsc	tempdone
-		return
+		bra	TempSensorDone
 		iorlw	0		;Check if a delay is needed
 		skpnz
 		call	TempSensorDelay	;Delay for the measurement to be done
@@ -1477,20 +1434,76 @@ TempSensorROM	movfw	temp
 		movfw	savestage	;Resume the normal sequence
 		movwf	sensorstage
 		bra	TempSensorSteps
-
-TempSensorDelay	movlw	b'00111000'
-		movwf	T1CON
-		movlw	low (65536 - 500000 / 8)
-		movwf	TMR1L
-		movlw	high (65536 - 500000 / 8)
-		movwf	TMR1H
-		bsf	T1CON,TMR1ON
-		clrwdt
-		bcf	PIR1,TMR1IF
-TempSensorDlyL1	btfss	PIR1,TMR1IF
-		bra	TempSensorDlyL1
-		bsf	T1CON,TMR1ON
+TempSensorDone	btfsc	tempfail
+		bra	TempSensorFail
+		;Report the sensor address and the measurement result
+		movlw	P_SensorFound
+		call	Print
+		movlw	P_DS18S20
+		btfsc	temp18b20
+		movlw	P_DS18B20
+		call	Print
+		call	PrintNewline
+		movlw	ROMCode
+		movwf	FSR0L
+		clrf	FSR0H
+		movlw	8
+		movwf	loopcounter
+		movlw	P_ROMCode
+		call	Print
+TempSensorPrL1	call	PrintChar
+		moviw	FSR0++
+		call	PrintHex
+		decfsz	loopcounter,F
+		bra	TempSensorPrL1
+		call	PrintNewline
+		movlw	P_Measurement
+		call	Print
+		call	PrintFloat
+TempSensorEnd	call	PrintNewline
+		banksel	TRISA
+		bsf	TRISA,RA6	;Release GPIO1
+		bsf	TRISA,RA7	;Release GPIO2
+		banksel	PORTA
 		return
+
+TempSensorFail	movfw	temp
+		andlw	0x7f
+		addlw	-1
+		skpnz
+		bra	F_TempDetect	;Failed at step 0: No presence pulse 
+		;When the sensor is not powered, it may respond correctly to
+		;the first presence pulse, but fail the second time
+		addlw	-4
+		skpnz
+		bra	F_TempDetect	;Failed at step 4: No presence pulse
+		addlw	-2
+		skpnz
+		bra	F_TempSensor	;Failed at step 6: Read family code
+		addlw	-12
+		skpnz
+		bra	F_TempCRC	;Failed at step 18: Read CRC
+		movlw	P_TempFailed
+		call	Print
+		movfw	temp
+		andlw	0x7f
+		call	PrintByte
+		bra	TempSensorEnd
+F_TempShortA6	movlw	P_TempShortA6
+		bra	TempSensorPrint
+F_TempShortA7	movlw	P_TempShortA7
+		bra	TempSensorPrint
+F_TempPullUp	movlw	P_TempPullUp
+		bra	TempSensorPrint
+F_TempDetect	movlw	P_TempDetect
+		bra	TempSensorPrint
+F_TempSensor	movlw	P_TempSensor	;Happens with DS18B20 + DS18S20
+		bra	TempSensorPrint
+F_TempCRC	movlw	P_TempAddrCRC	;Happens with more than one device
+		btfsc	tempaddr
+		movlw	P_TempSPadCRC
+TempSensorPrint	call	Print
+		bra	TempSensorEnd
 
 StoreTempValue	skpnc			;Carry indicates a failed reading
 		bra	StoreTempFail
@@ -1510,6 +1523,123 @@ StoreTempEnd	movfw	sensorstage
 		return
 
 ; End of test implementations
+
+DebugCommand	movlw	input
+		movwf	FSR0L
+		moviw	FSR0++
+		xorlw	'A'
+		skpnz
+		goto	SetPortA
+		xorlw	'A' ^ 'B'
+		skpnz
+		goto	SetPortB
+		xorlw	'B' ^ 'P'
+		skpnz
+		goto	PrintAddr
+		goto	BadTest
+
+SetPortA	movlw	PORTA
+		bra	SetPort
+SetPortB	movlw	PORTB
+SetPort		movwf	FSR1L
+		clrf	FSR1H
+		movlw	8
+		movwf	loopcounter
+SetPortLoop	clrc
+		moviw	FSR0++
+		xorlw	'1'
+		skpnz
+		bra	SetPortOut1
+		xorlw	'1' ^ '0'
+		skpnz
+		bra	SetPortOut0
+		xorlw	'0' ^ '?'
+		skpnz
+		bra	SetPortInput
+		goto	BadTest
+SetPortOut1	setc
+SetPortOut0	rlf	output,F
+		setc
+		rlf	mask,F
+		bra	SetPortNext
+SetPortInput	rlf	mask,F
+		rlf	output,F
+SetPortNext	decfsz	loopcounter,F
+		bra	SetPortLoop
+		moviw	FSR0++
+		skpz
+		goto	BadTest
+SetPortCommit	bsf	FSR1L,7
+		comf	mask,W
+		movwf	INDF1
+		bcf	FSR1L,7
+		movfw	output
+		xorwf	INDF1,W
+		andwf	mask,W
+		xorwf	INDF1,F
+		goto	MainLoop
+
+TempSensorDelay	movlw	50
+Delay		movwf	delaycount
+		banksel	T6CON		;Bank 8
+		movlw	b'1001001'	;1:4 prescalar, 1:10 postscalar
+		movwf	T6CON
+		movlw	249		;250us period
+		movwf	PR6
+		movlw	4		;Compensation for overhead
+		movwf	TMR6
+		bsf	T6CON,TMR6ON	;Start the timer running
+		banksel	PIR3		;Bank 0
+DelayLoop1	bcf	PIR3,TMR6IF
+DelayLoop2	call	IdleTasks
+		btfss	PIR3,TMR6IF
+		bra	DelayLoop2
+		decfsz	delaycount,F
+		bra	DelayLoop1
+		return
+
+PrintAddr	clrf	FSR1L
+		clrf	FSR1H
+PrintAddrLoop	call	GetHex
+		skpnc
+		bra	PrintAddrJump
+		movwf	temp
+		swapf	FSR1L,W
+		andlw	0x0f
+		movwf	FSR1H
+		swapf	FSR1L,W
+		andlw	0xf0
+		iorwf	temp,W
+		movwf	FSR1L
+		bra	PrintAddrLoop
+PrintAddrJump	skpz
+		goto	BadTest
+		movfw	INDF1
+		call	PrintHex
+		call	PrintNewline
+		goto	MainLoop
+
+GetHex		moviw	FSR0++
+		addlw	-'0'
+		skpc
+		bra	GetHexFail
+		addlw	-10
+		skpc
+		bra	GetHexNum
+		andlw	~0x20
+		addlw	-7
+		skpc
+		bra	GetHexFail
+		addlw	-6
+		skpnc
+		bra	GetHexFail
+		addlw	6
+GetHexNum	addlw	10
+		clrc
+		return
+GetHexFail	setc
+		moviw	-1[FSR0]
+		return
 
 PrintNewline	movlw	'\r'
 		call	PrintChar
@@ -1670,9 +1800,15 @@ PrintByte	bsf	leadingzero
 		movwf	temp
 		addlw	-100
 		skpc
-		goto	PrintByteJ1
+		bra	PrintByteJ1
 		movwf	temp
-		movlw	'1'
+		addlw	-100
+		skpc
+		bra	Print100
+		movwf	temp
+		movlw	'2'
+		bra	PrintFraction
+Print100	movlw	'1'
 PrintFraction	call	PrintChar
 		bcf	leadingzero
 PrintByteJ1	clrf	loopcounter
@@ -1839,6 +1975,7 @@ P_MicroSec	dw	S_MicroSec
 P_VoltRef	dw	S_VoltRef
 P_VoltRefPrompt	dw	S_VoltRefPrompt
 P_InvalidValue	dw	S_InvalidValue
+P_PullUp	dw	S_PullUp
 P_SensorFound	dw	S_SensorFound
 P_DS18S20	dw	S_DS18S20
 P_DS18B20	dw	S_DS18B20
@@ -1878,13 +2015,14 @@ S_MicroSec	da	"us\r\n\032"
 S_VoltRef	da	"Reference voltage setting (0..9) [\032"
 S_VoltRefPrompt	da	"]: \032"
 S_InvalidValue	da	"Invalid value\032"
+S_PullUp	da	"Pull up resistor rise time: \032"
 S_SensorFound	da	"Sensor type: \032"
 S_DS18S20	da	"DS18S20\032"
 S_DS18B20	da	"DS18B20\032"
 S_ROMCode	da	"ROM code:\032"
 S_Measurement	da	"Measured temperature: \032"
-S_TempShortA6	da	"Short circuit on power line\032"
-S_TempShortA7	da	"Short circuit on data line\032"
+S_TempShortA6	da	"Short circuit on the power line\032"
+S_TempShortA7	da	"Short circuit on the data line\032"
 S_TempPullUp	da	"Missing pull up resistor\032"
 S_TempDetect	da	"No 1-wire device detected\032"
 S_TempSensor	da	"Unsupported 1-wire device type\032"
