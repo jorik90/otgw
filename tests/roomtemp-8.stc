@@ -1,0 +1,30 @@
+test "alternative room temperature message bypasses LT filtering"
+
+constraint p16f1847
+
+load boiler.stc
+Boiler.response = 0x50180000
+
+# Disconnect the thermostat
+Thermostat.mode = off
+
+go 1500000
+clearalttable
+
+# Configure LT limit of 15.0 degrees
+Serial.tx = "LT=15.0\r"
+# Configure fake room temperature of 10.0 degrees (below LT)
+Serial.tx = "RT=10.0\r"
+# Add alternative request for MsgID 24
+Serial.tx = "AA=24\r"
+Serial.tx = "MI=120\r"
+
+go 3000000
+check {LT: 15.00}
+check {RT: 10.00}
+check {AA: 24}
+
+# Gateway's alternative message carries 10.0 (0x0A00), not converted to Invalid-Data
+go 8000000
+check {R[19]0180A00}
+

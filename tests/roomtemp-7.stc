@@ -1,0 +1,50 @@
+test "negative room temperature handling with LT and summary report"
+
+constraint p16f1847
+
+load boiler.stc
+Boiler.response = 0x50180000
+
+Thermostat.tx = 0x10180000
+Thermostat.interval = 0.15
+Thermostat.temperature = -2.5
+
+go 1500000
+clearalttable
+Serial.tx = "LT=5.0\r"
+
+go 3000000
+check {LT: 5.00}
+# Negative temperature before any valid reading: converted to Invalid-Data
+check {T[19]018FD80}
+check {R[2A]018FD80}
+
+# Valid positive temperature arrives: passes through and becomes last valid
+mark
+Thermostat.temperature = 20.5
+go 5000000
+check {B[5D]0181480}
+
+# Subsequent negative temperature: discarded and replaced with last valid (20.5)
+mark
+Thermostat.temperature = -2.5
+go 7000000
+check {T[19]018FD80}
+check {R[19]0181480}
+
+# Value storage in summary report reflects replaced valid temperature
+mark
+Serial.tx = "PS=1\r"
+go 7500000
+check {PS: 1}
+check {20\.50}
+Serial.tx = "PS=0\r"
+
+# Disable limit with LT=0: negative temperature should now pass through
+mark
+Serial.tx = "LT=0\r"
+Thermostat.temperature = -2.5
+go 9500000
+check {LT: 0.00}
+check {B[5D]018FD80}
+

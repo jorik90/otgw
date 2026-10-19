@@ -827,10 +827,10 @@ bool Thermostat::SendMessage(unsigned msg) {
     int id = msg >> 16 & 0xff;
     switch (id) {
      case 16: // Room setpoint
-	msg = SetParity((msg & 0xffff0000) | (unsigned)(256 * m_setpoint->getVal()));
+	msg = SetParity((msg & 0xffff0000) | ((unsigned)(256 * m_setpoint->getVal()) & 0xffff));
 	break;
      case 24: // Room temperature
-	msg = SetParity((msg & 0xffff0000) | (unsigned)(256 * m_roomtemp->getVal()));
+	msg = SetParity((msg & 0xffff0000) | ((unsigned)(256 * m_roomtemp->getVal()) & 0xffff));
 	break;
     }
     return Opentherm::SendMessage(msg);

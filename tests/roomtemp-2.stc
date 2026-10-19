@@ -1,0 +1,40 @@
+test "discard room temperature below limit and send last valid"
+
+constraint p16f1847
+
+load boiler.stc
+Boiler.response = 0x50180000
+
+Thermostat.tx = 0x10180000
+Thermostat.interval = 0.15
+Thermostat.temperature = 21.5
+
+go 1500000
+clearalttable
+Serial.tx = "LT=5.0\r"
+
+go 3000000
+check {LT: 5.00}
+check {B[5D]0181580}
+
+# Drop room temperature below the limit: last valid (21.5) should be sent
+mark
+Thermostat.temperature = 3.25
+go 5000000
+check {T[19]0180340}
+check {R[19]0181580}
+
+# Exact limit value (5.0) should pass through and become new last valid
+mark
+Thermostat.temperature = 5.0
+go 7000000
+check {B[5D]0180500}
+
+# Disable limit with LT=0: 3.25 should now pass through
+mark
+Serial.tx = "LT=0\r"
+Thermostat.temperature = 3.25
+go 9000000
+check {LT: 0.00}
+check {B[5D]0180340}
+

@@ -1,0 +1,469 @@
+/**
+ * based on code by Sebastian Faubel
+ * modified by Christoph Cullmann and Olaf Schmidt 
+ */
+
+/* common (X)HTML formats */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+font-size: 100%;
+line-height: 1.2em; /* Note: it is inherited as is, not recalculated! */
+background-color: white;
+color: black;
+font-family: sans-serif;
+padding: 0;
+margin: 0;
+}
+
+table, td, th {
+font-family: sans-serif;
+padding: 0;
+margin: 0;
+text-align: left;
+}
+
+input, select {
+font-size: 0.8em;
+line-height: 1em;
+}
+
+form {
+margin: 0;
+padding: 0;
+}
+
+img {
+margin: 0px 10px;
+}
+
+img.right {
+float: right
+}
+
+img.left {
+float: left
+}
+
+pre {
+font-size: 100%;
+}
+
+optgroup {
+font-style: normal;
+}
+
+a:link {
+color: #0000C0;
+text-decoration: none;
+}
+
+a:visited {
+color: #800080;
+text-decoration: none;
+}
+
+a:hover {
+text-decoration: underline;
+}
+
+/* navigation header, this is the combined area with logo and section links */
+
+#nav_header_top {
+height: 52px;
+
+text-align: right;
+
+background-color: #509e0e;
+border-bottom: 1px solid #000000;
+}
+
+#nav_header_bottom {
+padding: 6px 6px 6px 84px;
+background-color: #dff1d6;
+border-bottom: 1px solid #000000;
+
+text-align: left;
+}
+
+#nav_header_logo {
+float: left;
+padding: 10px;
+}
+
+#nav_header_logo a img {
+width: 64px;
+height: 64px;
+}
+
+#nav_header_logo_right {
+float: right;
+padding: 10px;
+}
+
+/* title text */
+#nav_header_title {
+position: absolute;
+top: 12px;
+left: 86px;
+border: 0px;
+font-size: 32px;
+font-weight: bold;
+color: white;
+white-space: nowrap;
+
+line-height: 36px;
+}
+
+/* location combo */
+#nav_header_location {
+position: absolute;
+top: 12px;
+right: 8px;
+border: 0px;
+color: #444;
+vertical-align: middle;
+white-space: nowrap;
+
+font-size: 14px;
+}
+
+/* location URL */
+#nav_header_bottom_left {
+vertical-align: middle;
+
+font-size: 0.8em;
+line-height: 1.1em;
+}
+
+/* place for the links to contact, sitemap, ... s*/
+#nav_header_bottom_right {
+float: right;
+vertical-align: middle;
+
+font-size: 0.8em;
+line-height: 1.1em;
+}
+
+/* main color definitions */
+
+.menuheader {
+height: 0;
+line-height: 0;
+margin: 0;
+padding: 0;
+font-size: 0;
+}
+
+#leftmenu, #rightmenu {
+line-height: 1.175;
+width: 168pt;
+}
+
+#leftmenu h2, #rightmenu h2 {
+font-size: 1em;
+padding-left: 1em;
+vertical-align: middle;
+background-color: #509e0e;
+border-top: 0.3em solid #509e0e;
+border-bottom: 0.3em solid #509e0e;
+color: white;
+margin-top: 0;
+}
+
+#leftmenu h2 a:link {
+color: #FFFFFF;
+text-decoration: none;
+}
+
+#leftmenu h2 a:visited {
+color: #FFFFE0;
+text-decoration: none;
+}
+
+#rightmenu h3 {
+padding: 0.3em 0.8em;
+font-size: 1em;
+margin-bottom: 0;
+}
+
+#leftmenu ul, #rightmenu ul {
+margin: 0;
+padding-left: 0.5em;
+padding-bottom: 1em;
+}
+
+#leftmenu ul {
+list-style-type: none;
+}
+
+#rightmenu ul {
+list-style-type: none;
+}
+
+#leftmenu li, #rightmenu li {
+font-size: 0.8em;
+}
+
+#leftmenu li {
+margin-left: 1em;
+}
+
+#rightmenu li {
+margin-left: 1.5em;
+}
+
+#leftmenu ul ul, #rightmenu ul ul {
+margin: 0;
+padding-left: 0;
+}
+
+#leftmenu li li, #rightmenu li li {
+font-size: 0.8em;
+margin-left: 2em;
+}
+
+li.here a:link, li.here a:visited, li.here li.here a:link, li.here li.here a:visited  {
+text-decoration: underline;
+}
+
+li.here li a:link, li.here li a:visited {
+text-decoration: none;
+}
+
+li.here a:hover, li.here li a:hover, li.here li.here a:hover {
+text-decoration: underline;
+}
+
+/**
+ * page footer
+ */
+
+/* background + border at top */
+#footer {
+border-top: 1px solid #000000;
+background-image: url(../images/footer_bg.png);
+background-repeat: repeat-x;
+width: 100%;
+height: 100px;
+bottom:0px;
+}
+
+/* right footer, contains the wave image */
+#footer_right {
+position: absolute;
+right: 0px;
+text-align: right;
+z-index: 5;
+}
+
+/* left footer, contains the text */
+#footer_left {
+position: absolute;
+left: 0px;
+text-align: left;
+padding: 1em 1.5em 0em 1.5em;
+clear: both;
+z-index: 10;
+}
+
+/* classes */
+
+.centered {text-align: center}
+.timestamp {font-size: smaller; text-align: center}
+
+#main, #content {
+clear: both;
+}
+
+#content {
+background-color: white;
+padding: 0.5em 1.0em 1.5em 0.7em;
+text-align: justify;
+}
+
+#content td {
+font-family: sans-serif;
+padding: 0.25em;
+margin: 0;
+text-align: left;
+}
+
+#content th {
+font-family: sans-serif;
+padding: 0.25em;
+margin: 0;
+text-align: center;
+}
+
+#content td.right {
+text-align: right;
+}
+
+#content td.center {
+text-align: center;
+}
+
+#content h4, #content h3, #content h2, #content h1 {
+color: #509e0e;
+text-align: left;
+line-height: 1em; /* without this lines stick in each other for headings */
+}
+
+#content p {
+/* padding: 0.5em 0.7em 0.0em 0.7em; */
+text-align: justify;
+}
+
+#content a:hover {
+  text-decoration: none;
+}
+
+#content a img {
+border: none;
+}
+
+#quicklinks {
+background-color: #E6F0F9;
+font-size: 1em;
+padding: 1em;
+text-align: center;
+margin-top: 1em;
+margin-left: 0.5em;
+margin-bottom: 0.5em;
+margin-right: 0.5em;
+}
+
+#leftmenu, #rightmenu {
+background-color: white;
+color: #036;
+}
+
+div.center {
+text-align: center;
+}
+
+div.right {
+text-align: right;
+}
+
+table.center {
+margin-left: auto;
+margin-right: auto;
+}
+
+img.center {
+display: block;
+margin-left: auto;
+margin-right: auto;
+}
+
+.underline {
+text-decoration: underline;
+}
+
+.indent {
+padding-left: 0.4in;
+}
+
+.warning {
+color: red;
+}
+
+.menu_box {
+border-top: 8px solid white;
+
+border-right: 8px solid white;
+border-left: 8px solid white;
+
+background-color: #dff1d6;
+}
+
+#search {
+text-align: center;
+padding: 0.2em 0.2em 0.2em 0.2em;
+}
+
+#search label {
+display: none;
+}
+
+#search input, #search select {
+width: 95%;
+margin-bottom: 2px;
+}
+
+#hotspot {
+font-size: 0.8em;
+line-height: 1em;
+text-align: center;
+padding: 0 0 0.8em 0;
+}
+
+.error {
+font-weight: bold;
+color: red;
+background-color: yellow;
+border: 5px double red;
+margin: 10px;
+padding: 10px;
+}
+
+.newsbox1 {
+background-color: #E6F0F9;
+margin-top: 1em;
+margin-bottom: 0.5em;
+}
+
+.newsbox2 {
+background-color: white;
+margin-top: 1em;
+margin-bottom: 0.5em
+}
+
+/* common style for tables used in the page */
+.table_box {
+background-color: #dff1d6;
+border: 0;
+padding: 0;
+margin: 0;
+border-spacing: 0;
+}
+
+.table_box th {
+background-color: #509e0e;
+color: white;
+}
+
+ol.leading {
+line-height: 1.5em;
+}
+
+/* needed for edu.kde.org */
+.contentheader, #content h4.contentheader {
+font-size: 1em;
+font-weight: bold;
+line-height: 1.2em;
+padding: 0.1em 0 0.2em 1em;
+vertical-align: middle;
+background-color: #509e0e;
+color: white;
+margin: 0;
+}
+
+::selection {
+color: white;
+background: #509e0e;
+}
+
+/* hidden stuff */
+.doNotDisplay {
+display: none;
+}
+
+@media aural { .doNotDisplay {
+display: inline;
+}}

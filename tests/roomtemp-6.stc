@@ -1,0 +1,35 @@
+test "LT and HM settings persist across reset"
+
+constraint p16f1847
+
+load boiler.stc
+Boiler.response = 0x50180000
+
+module load switch BRK
+attach SERIAL_tx BRK.A
+attach ground BRK.B
+
+go 1500000
+clearalttable
+Serial.tx = "LT=5.5\r"
+Serial.tx = "HM=62\r"
+
+go 3000000
+check {LT: 5.50}
+check {HM: 62}
+
+# Trigger a BREAK reset on the serial line
+mark
+BRK.state = closed
+go 3010000
+BRK.state = open
+
+go 5000000
+check {OpenTherm Gateway}
+
+Serial.tx = "PR=J\r"
+Serial.tx = "PR=H\r"
+go 6000000
+check {PR: J=5.50}
+check {PR: H=62}
+

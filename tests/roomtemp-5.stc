@@ -1,0 +1,43 @@
+test "LT command validation"
+
+constraint p16f1847
+
+load boiler.stc
+load thermostat.stc
+
+go 2000000
+
+Serial.tx = "PR=J\r"
+go 3000000
+check {PR: J=0.00}
+
+Serial.tx = "LT=-1\r"
+go 4000000
+check {LT: SE}
+
+Serial.tx = "LT=100.5\r"
+go 5000000
+check {LT: OR}
+
+Serial.tx = "LT=abc\r"
+go 6000000
+check {LT: SE}
+
+Serial.tx = "LT=\r"
+go 7000000
+check {(?n)^SE}
+
+Serial.tx = "PR=J=\r"
+go 8000000
+check {PR: SE}
+
+Serial.tx = "LT=6.25\r"
+go 9000000
+check {LT: 6.25}
+
+Serial.tx = "PR=J\r"
+go 10000000
+check {PR: J=6.25}
+
+eeprom 0xc0 6.25
+

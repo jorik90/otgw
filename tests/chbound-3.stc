@@ -1,0 +1,20 @@
+test "unsupported MsgID 49 is not spoofed when HM is active"
+
+constraint p16f1847
+
+load boiler.stc
+# Make boiler respond with Data-Invalid for MsgID 49
+Boiler.response = 0x60310000
+
+Thermostat.tx = 0x80310000
+Thermostat.interval = 0.15
+
+go 1500000
+clearalttable
+# Using default bounds (10..90), set HM=60
+Serial.tx = "HM=60\r"
+go 3500000
+check {HM: 60}
+check {B[6E]0310000}
+check {A[4C]031....} ""
+

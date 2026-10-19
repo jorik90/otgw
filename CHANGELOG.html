@@ -1,0 +1,404 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<!-- saved from url=(0039)https://otgw.tclcode.com/changelog.html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta http-equiv="imagetoolbar" content="no">
+<title>Gateway Firmware Changelog</title>
+<link href="./standard.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<table id="main" width="100%" border="0" cellspacing="0" cellpadding="0">
+<tbody><tr>
+<td valign="top" id="content">
+<h1>Gateway Firmware Changelog</h1>
+
+<h3>Version 6.9 (alpha) &mdash; Custom version by jorik90</h3>
+<ul>
+<li>New LT command to discard room temperature reports (MsgID 24) below a
+configured limit, replacing them with the last valid reading (or Invalid-Data).
+</li><li>New PR=J command to report the configured room temperature lower limit.
+</li><li>New HM command to cap the maximum central heating setpoint upper bound
+reported to the thermostat in MsgID 49.
+</li><li>New PR=H command to report the configured maximum central heating
+setpoint upper bound.
+</li></ul>
+
+<h3>Version 6.8</h3>
+<ul>
+<li>Do not pass on a slave opentherm version that the OTGW does not support.
+</li><li>Correctly initialize the variable used for the fake room temperature
+feature.
+</li></ul>
+
+<h3>Version 6.7</h3>
+<ul>
+<li>Add an RT command for reporting a user specified room temperature to the
+slave. Some heat pumps (Weheat) seem to need this.
+Fixes ticket <a href="https://otgw.tclcode.com/support/tktview/93df967e49">[93df967e49]</a>.
+</li></ul>
+
+<h3>Version 6.6</h3>
+<ul>
+<li>Write the measured outside temperature to the boiler.
+</li><li>New PR=E command to report the temperature measured by an external
+sensor.
+</li><li>Read brand information strings from the boiler (MsgIDs 93, 94, 95)
+</li><li>Enable low voltage programming to allow the PIC to be programmed by
+otgwmcu. This only affects freshly programmed chips. It cannot be changed
+via a firmware upgrade.
+</li><li>New PR=F command to check if the PIC can be flashed by otgwmcu.
+</li><li>New MI command to configure the interval between receiving a message
+from the boiler and sending the next message in stand-alone mode.
+</li><li>New PR=N command to report the currently configured message interval.
+</li><li>New FS command to disable fallback to fail-safe mode for installations
+where monitor mode may be worse than a sporadic WDT reset in gateway mode.
+</li><li>Make TT=0/TC=0 stop blinking the override LED when a TT/TC command has
+been issued with a thermostat that doesn't support the functionality.
+</li><li>Fix: Generated remote request message must be Write-Data.
+</li><li>Fix: Too many letter combinations invoked the TS command.
+</li></ul>
+
+<h3>Version 6.5 (PIC16F1847) / 5.8 (PIC16F88), released 12 March 2023</h3>
+<ul>
+<li>User control setpoints below 8 degrees are maintained without the need
+to be repeated once per minute.
+</li><li>Don't store faulty temperature sensor readings into the PS=1 data buffer.
+</li><li> OT version numbers reported by the boiler that are higher than 3.0 must
+not be changed to 3.0.
+</li><li>Fix: After reconnecting the thermostat, the OTGW may end up in a state
+where it replaces all messages with alternatives.
+</li><li>Increase resilience against boilers that start sending a second protocol
+during the second half of the stop bit.
+</li></ul>
+<b>PIC16F1847-only changes</b>
+<ul>
+<li>Add a BS command to modify the room setpoint being sent to the boiler.
+</li><li>Perform CRC checking on data from an external temperature sensor.
+</li><li>A/D conversions and error reporting were triggered much too frequently.
+</li><li>Error 03 could happen in case of simultaneous activity on both interfaces.
+</li></ul>
+
+<h3>Version 6.4 (PIC16F1847) / 5.7 (PIC16F88), released 28 December 2022</h3>
+<ul>
+<li>Derive the comfort LED from MsgID 0 Read-Data instead of Read-Ack.
+</li><li>Fix: Garbage after confirmation of LA, LB, LC, LD, LE, LF commands.
+</li><li>Fix the SR command for Write-Data messages.
+</li></ul>
+
+<h3>Version 6.3 (PIC16F1847), released 19 November 2022</h3>
+<ul>
+<li>Add SM command for forcing summer mode
+</li><li>Add BW command for forcing DHW blocking
+</li><li>Add GPIO function to control DHW blocking
+</li><li>Use the received data value when turning MsgID16 Unknown DataID into
+Write Ack.
+</li><li>Abort DHW push when any other HW command is performed.
+</li><li>When the DHW push bit is cleared in the ID99 Write Ack, interpret it as
+a sign that the boiler doesn't support DHW push.
+</li><li>Changing gateway mode/monitor mode was not correctly stored to EEPROM.
+</li></ul>
+
+<h3>Version 5.6 (PIC16F88), released 19 November 2022</h3>
+<ul>
+<li>Use the received data value when turning MsgID16 Unknown DataID into
+Write Ack.
+</li><li>Fix: Individual expiry of SC, CS, and C2 commands is not working
+correctly.
+</li></ul>
+
+<h3>Version 6.2 (PIC16F1847) / 5.5 (PIC16F88), released 14 October 2022</h3>
+<b>New features</b>
+<ul>
+<li>The C2 command now expires, just like the CS command already does.
+</li><li>The commands that expire (SC, CS, and now also C2) are decoupled, so a
+control setpoint doesn't stay in effect if the clock data is updated every
+minute.
+</li><li>User configured max central heating setpoint and hot water setpoint are
+preserved across restarts of the OTGW.
+</li><li>Option to force a standard thermostat: FT=S.
+</li><li>Init messages that have been marked as unknown are skipped. This allows
+using the UI=49 command as a work-around for buggy boilers that incorrectly
+report the current max CH water setpoint as the upper bound (like Viessman
+Vitodens).
+</li><li>When the OTGW has no valid time and day of week information, the ReadAck
+or WriteAck response from the slave is passed on to the thermostat.
+</li><li>MsgIDs 48 and 49 are now always requested on startup, because some
+boilers provide incorrect information in MsgID 6 about their support.
+</li></ul>
+<b>Bug fixes</b>
+<ul>
+<li>Hanging serial receiver due to ESP8266 debug messages on power up.
+</li><li>When there are no alternative messages in stand-alone mode, the status 
+message sent instead does not have the correct data bits.
+</li><li>Only report the Smart Power level when it actually changes.
+</li><li>When the OTGW changes a ReadData request from the thermostat for MsgID
+56 or 57 into a WriteData request to the boiler, the data in the WriteAck
+response from the boiler should be returned to the thermostat in the ReadAck
+response.
+</li><li>While obtaining transparent slave parameters (TSP) via the PM command,
+the OTGW gets confused when the thermostat also reads a TSP.
+</li></ul>
+<b>PIC16F1847-only features</b>
+<ul>
+<li>Remote request command RR=0..12 for things such as starting remote
+filling, if the boiler supports it.
+</li><li>Cooling commands: CE and CL.
+</li><li>Add support for Remote Override Operating Modes: MW, MH, and M2.
+</li><li>DHW push (heat the water storage tank once): HW=P.
+</li><li>TP command for individual access to transparent slave parameters (TSPs)
+and fault history buffer entries (FHBs). This feature also allows TSPs to be
+written.
+</li></ul>
+
+<h3>Version 6.1 (PIC16F1847) / 5.4 (PIC16F88), released 31 May 2022</h3>
+<ul>
+<li>Fix restarts when no alternatives are available in stand-alone mode.
+</li><li>Don't go into fail safe mode after a WDT reset if no thermostat is
+connected.
+</li><li>Add Watch dog time-out (W) as a reset reason to the PR=Q command output.
+</li><li>PIC16F1847: Fix detection of thermostat connect/disconnect.
+</li><li>PIC16F1847: Fix random SE responses from AA, DA, MM, PM, and VS commands.
+</li><li>PIC16F1847: Extend debug pointer to addresses above 0xFF.
+</li></ul>
+
+<h3>Version 6.0, released 8 March 2022</h3>
+<ul>
+<li>First firmware for PIC16F1847. The functionality is basically the same as
+version 5.3 for PIC16F88, except for some minor changes due to differences in
+the peripheral implementations in the hardware of the two PICs.
+</li></ul>
+
+<h3>Version 5.3, released 24 February 2022</h3>
+<ul>
+<li>Reduce the subroutine nesting level, which could lead to spurious WDT
+resets in some unfavorable cases.
+</li></ul>
+
+<h3>Version 5.2, released 28 December 2021</h3>
+<ul>
+<li>Handle Smart Power level changes while in monitor mode.
+</li><li>Add support for boilers that generate unsolicited Medium/High power.
+</li><li>Limit the validity of a CS command. A remotely set control setpoint
+expires after just over a minute. This is a safety feature to prevent
+runaway heating when the controlling program loses its connection, or
+crashes.
+</li><li>Change the default voltage reference to 1.458V (4), which translates to
+a line voltage that lies closer to the midway point between the high and low
+voltage levels defined by the Opentherm specification.
+</li><li>Change the voltage to detect a disconnected thermostat to 20.05V. The
+old value of 19.11V might give false positives due to component tolerances.
+</li><li>Pass on the response for MsgID 9 and MsgID 100 from the boiler (or a
+downstream gateway) if it is a Read-Ack or Write-Ack and the OTGW doesn't
+have any active override itself.
+</li></ul>
+
+<h3>Version 5.1, released 11 February 2021</h3>
+<ul>
+<li>Bug fix: Stand-alone mode: OTGW sends Read-Data for MsgID 1 (Control
+Setpoint). Specs say it must be Write-Data.
+</li><li>Bug fix: Empty Read-Ack on MsgID 20 (Day &amp; Time) resets the thermostat
+clock to midnight.
+</li><li>Bug fix: The outside temperature, provided to the OTGW through an OT
+command or by an external temperature sensor, overwrites the DHW temperature
+value in the PS=1 output.
+</li><li>Bug fix: Monitor mode: The 'C', 'F', 'H', 'M', and 'W' LEDs are not
+working.
+</li><li>Bug fix: Monitor mode: Summary data is not updated.
+</li><li>Bug fix: Incorrect response format for the C2 and H2 commands.
+</li><li>Bug fix: Command OT=9.999 is not accepted and gives wrong error response:
+"OT: MPC".
+</li></ul>
+
+<h3>Version 5.0, released 18 January 2021</h3>
+<b>Potential incompatibility:</b> The PS=1 output has changed. If using this
+function, the program processing the information will have to be adapted
+accordingly.
+<ul>
+<li>Add support for a 2nd central heating circuit using the new C2, and H2
+commands.
+</li><li>New TS command to select if a connected temperature sensor is used for
+the outside temperature (O), or the return water temperature (R). The current
+setting can be verified with the PR=D command.
+</li><li>Support additional commands, like SH, SW and VS, in standalone mode.
+</li><li>Report additional values in a PS=1 report: 7 (Cooling control), 8
+(Control setpoint 2), 19 (DHW flow rate), 23 (CH2 room setpoint), 31 (CH2
+flow temperature), 33 (Boiler exhaust temperature), 70 (V/H master status),
+71 (V/H control setpoint), 77 (Relative ventilation). 
+</li><li>Use a WriteData request when sending the following IDs as alternative
+messages: 1 (TSet), 8 (TSetCH2), 14 (MaxRelMod), and 71 (VSet).
+</li><li>Repeat alternative messages that didn't receive a valid response.
+</li></ul>
+
+<h3>Version 4.3, released 7 January 2021</h3>
+<ul>
+<li>Store Monitor Mode setting in EEPROM, so it survives a restart of the OTGW
+<!-- Version 4.2.7, released 30 November 2020 -->
+</li><li>Store DHW setting in EEPROM, so it survives a restart of the OTGW
+<!-- Version 4.2.6, released 6 November 2020 -->
+</li><li>Fix freeze in standalone mode when boiler generates a stray signal
+<!-- Version 4.2.5, released 20 October 2015 -->
+</li><li>Add a command to obtain the current state of the GPIO input pins
+<!-- Version 4.2.4, released 29 August 2015 -->
+</li><li>Prevent unintended heat request in case of thermostat communication
+problems
+<!-- Version 4.2.3, released 12 February 2015 -->
+</li><li>Fix spontaneous reset in monitor mode
+<!-- Version 4.2.2, released 12 February 2015 -->
+</li><li>Add command to obtain the reason of the last reset
+<!-- Version 4.2.1, released 7 February 2015 -->
+</li><li>Fix bug: Missing response from the boiler may result in wrong data
+being returned by the gateway on the next request.
+</li></ul>
+
+<h3>Version 4.2, released 30 December 2014</h3>
+<ul>
+<li>Fix a bug in the presence detection of an opentherm thermostat and the
+state detection of an on/off thermostat.
+</li><li>When the gateway sends a message to the boiler for its own administration,
+a successful response should not undo any manual blacklisting of the message
+ID. 
+</li></ul>
+
+<h3>Version 4.1, released 29 November 2014</h3>
+<ul>
+<li>Add the FT command for those cases where the gateway is unable to
+auto-detect a Celcia 20 thermostat.
+</li><li>Add support for manually configured responses for MsgID 48 and 49.
+</li></ul>
+
+<h3>Version 4.0.1, released 15 June 2014</h3>
+<ul>
+<li>Correct a rounding error in the PS report resulting in invalid floating
+point values.
+</li></ul>
+
+<h3>Version 4.0, released 9 June 2014</h3>
+<ul>
+<li>Smart power support.
+</li><li>The gateway can be used with an on/off thermostat, or even without a
+thermostat.
+</li><li>Many workarounds for quirks of the Remeha iSense (RF) thermostat.
+</li><li>Several programmable GPIO functions.
+</li><li>New serial commands: CH, CR, CS, GA, GB, KI, MM, OH, PM, SB, SR, UI, and
+VS.
+</li><li>Greately relaxed the checks performed on the received opentherm signal.
+</li><li>Improved serial communications.
+</li><li>Increased immunity against weird input on the serial interface.
+</li><li>Blacklisting improvements.
+</li><li>Improved command confirmations.
+</li><li>Report the contents of messages with parity or stop-bit errors.
+</li><li>LEDs flash on powerup/reset of the gateway.
+
+</li></ul>
+
+<h3>Version 3.4, released 13 January 2013</h3>
+<ul>
+<li>Setting the setpoint on a Celcia 20 thermostat was broken by firmware
+version 3.3.
+</li><li>The gateway should give a thermostat three chances when trying to set a
+remote setpoint. It only did that when initially setting the setpoint. But
+when changing it to another value at some later moment the gateway
+immediately gave up if the first try did not work.
+</li></ul>
+
+<h3>Version 3.3, released 11 November 2012</h3>
+<ul>
+<li>Under some unfavorable circumstances the firmware program flow could
+exceed its stack space. This resulted in the loss of a return address which
+prevented the code from returning to the main program loop and subsequently
+the watchdog timer would kick in and put the device in its fail-safe state.
+This has been fixed by eliminating some subroutine levels.
+</li></ul>
+
+<h3>Version 3.2, released 15 July 2012</h3>
+<ul>
+<li>Some boilers clear out the data bytes when returning an Unknown-DataID
+response. This could cause strange behavior like the thermostat clock being
+reset to midnight on powerup of the gateway. If the list of alternative
+messages was empty, the clock reset would even happen every minute.
+</li></ul>
+
+<h3>Version 3.1, released 15 June 2012</h3>
+<ul>
+<li>Switch on the Maintenance LED when the gateway enters fail-safe mode,
+i.e. after a watchdog timeout has occurred.
+</li><li>Deleting alternative Data-IDs was broken since version 3.0
+</li><li>Watchdog timeouts were being obscured by the self-programming code
+(requires self-programming code upgrade).
+</li><li>Random serial data within 1 second after a reset would put the device
+into self-programming mode. Now an &lt;STX&gt; character is needed to do
+that (requires self-programming code upgrade).
+</li></ul>
+
+<h3>Version 3.0.1, released 2 June 2012</h3>
+<ul>
+<li>The version 3.0 firmware published on the web site was built with the
+adjustments needed for an Intergas boiler. For all other boilers it is
+better not to have these modifications.
+</li></ul>
+
+<h3>Version 3.0, released 20 May 2012</h3>
+<ul>
+<li>Switched to PIC16F88 (requires circuit board changes)
+</li><li>Added self-programming option for in-circuit firmware upgrade
+</li><li>Invalidate the received time information after about one minute, so the
+thermostat clock isn't continuously reset to the same time. 
+</li></ul>
+
+<h3>Version 2.1, released 05 Feb 2012</h3>
+<ul>
+<li>Fixed bug in resetting boiler counters.
+</li><li>The print summary command produced garbage when the outside temperature
+went below zero.
+</li></ul>
+
+<h3>Version 2.0, released 14 May 2011</h3>
+
+<ul>
+<li>Due to the addition of several new features, a PIC16F628(A) is now
+required. The code no longer fits in a PIC16F627(A).
+</li><li>Added an option to allow non-significant transitions to happen outside
+the range of -10%/+15%. This turned out to be necessary for (some) Remeha
+Celcia20 thermostats.
+</li><li>Added an option to trigger some thermostats to send a remote room setpoint
+override request. This is necessary to control the setpoint on certain
+thermostats, like the Remeha Celcia20.
+</li><li>Introduced several new functions that can be freely assigned to the
+optional LEDs that may be attached to four PIC output ports.
+</li><li>Added the option to switch between gateway and monitor mode via a serial
+command. This can be very useful for debugging a newly built gateway.
+</li><li>Accept a deviation of +/-0.125 degrees in the setpoint reported back by
+the thermostat after sending a remote room setpoint override response. This
+turned out to be necessary for Remeha iSense thermostats.
+</li><li>Added a new serial command to dump some useful information about the
+gateway.
+</li><li>Added a check for parity errors in the received messages.
+</li><li>Floating point values may now be specified with several decimal digits
+(although only the first 2 will actually be used).
+</li><li>The gateway can now report the most interesting parameters on demand,
+instead of reporting individual opentherm messages.
+<!-- Bugs -->
+</li><li>The gateway did not forward the outside temperature to the thermostat if
+it was reported by the boiler instead of via the serial interface.
+</li><li>Timing checks were too strict. The code dit not accept the full range of
+-10%/+15% deviation from the perfect transition time.
+</li><li>Negative temperatures that were specified without a fractional part ended
+up as positive.
+</li></ul>
+
+<h3>Version 1.3, released 26 Dec 2009</h3>
+
+<ul>
+<li>Fixed a problem with specifying negative outside temperatures.
+</li></ul>
+
+<h3>Version 1.2, released 22 Nov 2009</h3>
+<ul>
+<li>First published version
+</li></ul>
+</td>
+</tr>
+</tbody></table>
+
+
+</body></html>

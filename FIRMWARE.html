@@ -1,0 +1,1033 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<!-- saved from url=(0047) -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta http-equiv="imagetoolbar" content="no">
+<title>Firmware for the OpenTherm Gateway</title>
+<link href="./standard.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+<table id="main" width="100%" border="0" cellspacing="0" cellpadding="0">
+<tbody><tr>
+<td valign="top" id="content">
+<h1>Firmware for the OpenTherm Gateway</h1>
+
+<h2 id="failsafe">Fail-safe design</h2>
+
+Even though the gateway was designed in such a way that OpenTherm messages
+can be forwarded by the device using only hardware functions of the PIC
+after very minimal initialization, this is not the normal operating mode of
+the gateway. Simply passing on the OpenTherm messages unmodified would limit
+the possibilities of the device to monitoring only. However, the almost
+non-existing requirements for the code to be able to forward messages makes
+it ideal as a safety net for when things go completely awry. If the device
+ever resets as a result of a watchdog timeout, it falls back to this mode.
+<p>
+The gateway also takes advantage of this feature during
+<a href="#selfprog">self-programming</a>. So even when the firmware is being
+updated, the thermostat will still be able to communicate with the boiler.
+</p><p>
+</p><h2 id="operation">Normal operation</h2>
+
+During normal operation the gateway collects the request from the thermostat
+and possibly manipulates it before sending it on to the boiler. The full
+message has to be received before it can be examined and passed on. This
+delays the message to the boiler by the duration of a message. The same
+thing happens with the response on the way back from the boiler to the
+thermostat.
+The complete round-trip of a request from the thermostat to the boiler with
+a response back to the thermostat takes about 70ms longer than it would
+without the gateway in between. Fortunately the OpenTherm specification
+allows a response to take up to 800ms to be delivered to the thermostat. The
+boiler generally answers within 200ms, so an additional 70ms does not cause
+a problem.
+In fact, it is even possible to use multiple gateways in series.
+<p>
+</p><h3 id="reports">Reports</h3>
+After power-up, each message that is received by the gateway is reported on
+the serial interface. Such a report consists of a letter indicating whether
+the message was received from the thermostat ('T') or the boiler ('B'),
+followed by 8 hexadecimal digits representing the four data bytes of the
+message. If the gateway changes the message before sending it on, the
+changed message is also reported on the serial interface. In this case the
+first letter indicates if the message is a request sent to the boiler ('R'),
+or a response (answer) returned to the thermostat ('A'). In case of a parity
+or stop-bit error, the received message is reported with an 'E' as the first
+letter.
+<p>
+If desired the gateway can also be instructed to only report the collected
+information upon demand. See the <a href="#cmdps">PS=1 command</a> below for
+more information. 
+</p><p>
+The OTGW may also report events related to the thermostat:
+</p><dl>
+<dt>Thermostat disconnected
+</dt><dd>A voltage level exceeding the range allowed by the Opentherm
+specification has been detected on the thermostat connector. This usually
+means that no thermostat is connected, although it will also happen when an
+on/off thermostat is used.
+</dd><dt>Thermostat connected
+</dt><dd>A valid Opentherm voltage level has been detected after the thermostat
+had previously been determined to be disconnected.
+</dd><dt>Low power
+</dt><dd>A thermostat using Smart Power has switched back to normal (low power)
+mode.
+</dd><dt>Medium power
+</dt><dd>A thermostat using Smart Power has switched to medium power.
+</dd><dt>High power
+</dt><dd>A thermostat using Smart Power has switched to high power.
+</dd></dl>
+
+<h3 id="errors">Errors</h3>
+If an error is detected while receiving an OpenTherm message, the error is
+reported on the serial interface and the gateway waits for the OpenTherm
+connection to become idle before resuming operation. A connection is
+considered idle when no level change has occurred in at least 10 ms.
+<p>
+The following errors are defined:
+</p><dl>
+<dt id="error01">Error 01
+</dt><dd>Level changes happen too rapidly (disabled by default)
+</dd><dt id="error02">Error 02
+</dt><dd>The stop bit was 0 while it should be 1
+</dd><dt id="error03">Error 03
+</dt><dd>A bit was not received when it was expected
+</dd><dt id="error04">Error 04
+</dt><dd>A parity error was detected on a received opentherm message
+</dd></dl>
+
+<h2 id="dataids">Special Data IDs</h2>
+
+The firmware of the gateway was designed to treat several Data IDs specially:
+<dl>
+<dt>Read-Data Status (ID=0)
+</dt><dd>The gateway may manipulate bits 0, 1, and 4 in the master status byte
+depending on the setting of the <a href="#cmdch">CH</a>,
+<a href="#cmdhw">HW</a>, and <a href="#cmdh2">H2</a> commands before
+forwarding the request to the boiler.
+The original value of the master status byte is restored before sending the
+response to the thermostat. 
+</dd><dt>Write-Data Control Setpoint (ID=1)
+</dt><dd>If a <a href="#cmdcs">setpoint override</a> value has been configured,
+the gateway will send the configured setpoint instead of the one received
+from the thermostat.
+</dd><dt>Write-Data Master configuration (ID=2)
+</dt><dd>If the thermostat specifies Smart Power support the gateway will
+acknowledge it, regardless of the boiler response.
+</dd><dt>Read-Data RBP-flags (ID=6)
+</dt><dd>If the boiler doesn't support the DHW Setpoint or Max CH Setpoint
+parameters, the gateway will simulate read access.
+</dd><dt>Write-Data Control Setpoint 2 (ID=8)
+</dt><dd>If a <a href="#cmdc2">setpoint override</a> value has been configured
+for the 2nd heating circuit, the gateway will send the configured setpoint
+instead of the one received from the thermostat.
+</dd><dt>Read-Data SetPointOverride (ID=9)
+</dt><dd>The gateway sends a Read-Ack message with the last configured override
+setpoint value. Initially the override room setpoint is 0.0, meaning "no
+override". The gateway will continue to send a setpoint override value until
+it detects that the thermostat no longer honors the change (probably because
+it was canceled by a manual action or by the thermostat schedule). When
+that happens the override room setpoint resets itself to 0.0.
+</dd><dt>Write-Data Maximum relative modulation level (ID=14)
+</dt><dd>If a <a href="#cmdmm">maximum relative modulation level</a> value has
+been configured, the gateway will send the configured setpoint instead of
+the one received from the thermostat.
+</dd><dt>Write-Data DayTime (ID=20)
+</dt><dd>Normally the gateway will acknowledge the time and day by returning the
+received data to the thermostat.
+After the gateway receives a <a href="#cmdsc">Set Clock serial command</a>,
+the information specified in the command will be returned in the Write-Ack
+OpenTherm response instead. The time and day information from a serial
+command will only be retained for a maximum of about 61 seconds after the
+command was received because the gateway doesn't have the ability to
+accurately keep track of time, so it leaves that up to the thermostat.
+</dd><dt>Write-Data Room Temperature (ID=24)
+</dt><dd>If a <a href="#cmdrt">room temperature</a> value has been configured,
+the gateway will send the configured value instead of the one received from
+the thermostat. Otherwise, if a <a href="#cmdlt">room temperature lower
+limit</a> (jorik90 custom) has been configured and the thermostat reports a temperature below
+that limit, the gateway replaces it with the last valid room temperature
+received (or turns the message into an Invalid-Data request if no valid room
+temperature has been received yet).
+</dd><dt>Read-Data OutsideTemperature (ID=27)
+</dt><dd>Initially the gateway will pass on the value received from the boiler,
+or return a Data-Invalid message if the boiler doesn't provide an outside
+temperature value. If an outside temperature sensor is connected to the GPIO
+pins of the gateway, or an outside temperature has been configured using the
+<a href="#cmdot">OT serial command</a>, the gateway sends a Read-Ack message 
+with the measured or configured outside temperature value.
+</dd><dt>Read-Data Return water temperature (ID=28)
+</dt><dd>If the boiler doesn't provide a return water temperature, a temperature
+sensor can be connected to the GPIO pins of the gateway to provide this
+information.
+If the boiler does provide a return water temperature in a ReadAck, it will
+override the value from the temperature sensor. If that is not desired,
+message ID 28 can be <a href="#cmdui">marked as an unknown data ID</a>:
+(UI=28).<br>
+Note: Only a single temperature sensor is supported. It is not possible to
+get both the outside temperature and the return water temperature from
+external sensors.
+</dd><dt>Read-Data Max CH water Setpoint Bounds (ID=49)
+</dt><dd>If a <a href="#cmdhm">maximum central heating setpoint upper bound</a>
+(jorik90 custom) has been configured and the boiler reports an upper bound exceeding that value,
+the gateway caps the upper bound in the response to the thermostat.
+</dd><dt>Read/Write-Data DHW Setpoint (ID=56)
+</dt><dd>If a <a href="#cmdsw">hot water setpoint</a> value has been configured,
+the gateway will send the configured setpoint instead of the one received
+from the thermostat.
+</dd><dt>Read/Write-Data Max CH water Setpoint (ID=57)
+</dt><dd>If a <a href="#cmdsh">max central heating setpoint</a> value has been
+configured, the gateway will send the configured setpoint instead of the one
+received from the thermostat.
+</dd><dt>Write-Data Relative ventilation (ID=71)
+</dt><dd>If a <a href="#cmdvs">relative ventilation</a> value has been
+configured, the gateway will send the configured value instead of the one 
+received from the thermostat.
+</dd><dt>Read-Data FunctionOverride (ID=100)
+</dt><dd>The gateway sends a Read-Ack message with a value depending on the type
+of the last override setpoint configuration command. If a continuous
+temperature change was specified the returned value will be 0. For a
+temporary temperature change the value is 2 (enable overruling remote
+setpoint by program setpoint change).
+</dd><dt>Read-Data OpenTherm version Slave (ID=125)
+</dt><dd>The gateway implements OpenTherm protocol specification version 3.0.
+</dd></dl>
+<p>
+
+</p><h2 id="additional">Obtaining additional information</h2>
+
+When the device is powered up, the gateway initially passes on most
+messages unmodified. If the boiler replies to a certain message with an
+Unknown-DataId response, this is recorded. After three consecutive 
+Unknown-DataId responses for a specific Data ID, the gateway concludes that
+the boiler doesn't support that Data ID.
+The next time the thermostat sends a requests for the same Data ID, the
+gateway can assume the boiler would return an Unknown-DataId response again.
+So there is not much use forwarding the request.
+This is referred to as an "available slot" that the gateway may use to
+send its own requests to the boiler.
+When the response for the substituted Data ID comes back from the boiler,
+the gateway sends an Unknown-DataId response for the original request to the
+thermostat.
+<p>
+After a restart, the gateway will first use the available slots to obtain
+information about the boiler, such as the bounds for the DHW- and Max CH
+setpoints, and whether these setpoints can be modified via Opentherm.
+Various commands will also use one or more available slots to perform their
+function. Since these functions must wait for an available slot, there will
+be some delay before the data can be collected. If a new command requiring
+an available slot is executed before the previous one completed, the new
+command will cancel the older command. There is no queue.
+</p><p>
+When there are no pending requests for an available slot, the gateway
+selects an alternative Data ID from an internal table and sends that to the
+boiler instead.
+This table can be manipulated using the <a href="#cmdaa">add alternative</a>
+and <a href="#cmdda">delete alternative</a> commands.
+A maximum of 32 alternative Data IDs can be defined. The same Data ID may be
+specified multiple times to increase the frequency it will be requested.
+If the table of alternative Data IDs is empty, the gateway relinquishes the
+opportunity to use the available slot and forwards the request from the
+thermostat.
+</p><p>
+In case of a combination of a thermostat that doesn't request many different
+Data IDs and a boiler that supports all of them, there would not be any
+available slots for the gateway to use. This would prevent several of the
+gateway features to work. To solve this situation, one or more of the
+requests sent by the thermostat can be configured as unknown using the
+<a href="#cmdui">unknown ID command</a>, even though the boiler actually
+supports them. The gateway will then replace such messages with its own
+requests.
+Obviously this should not be done for Data IDs that are crucial for the
+operation of the heating system.
+Contrary to what some people think, boilers have no need for the room
+setpoint and room temperature. These parameters get turned into a control
+setpoint by the thermostat, which actually controls the boiler. So MsgIDs 16
+and 24 are good candidates if you can't find a sacrificial Data ID.
+</p><p>
+</p><h2 id="indicators">Indicators and GPIO</h2>
+Since the PIC had some unused I/O pins, I decided to use a couple of those
+to allow LEDs to be connected for indicating certain situations.
+<!-- The pins are pulled low when the configured function for the pin is
+active. Therefor the LEDs should be connected to VCC through a resistor of
+an appropriate value (something between 180 Ohm and 1 kOhm). -->
+The function of the LEDs can be configured using the <a href="#cmdla">LA,
+LB, LC, and LD serial commands</a>. The initial assignment is: 
+<dl>
+<dt>RB3 (pin 9) — Flame (F)
+</dt><dd>Low when the flame of the boiler is burning.
+</dd><dt>RB4 (pin 10) — Transmit (X)
+</dt><dd>Low while an OpenTherm message is being transmitted to either the
+thermostat or the boiler.
+</dd><dt>RB6 (pin 12) — Temperature override (O)
+</dt><dd>Low during a remote temperature override state.
+</dd><dt>RB7 (pin 13) — Boiler trouble (M)
+</dt><dd>The boiler is reporting a problem condition and requires maintenance.
+</dd></dl>
+
+Two more I/O pins of the PIC are used a GPIO pins. The function of these
+pins can also be selected via the <a href="#cmdga">GA and GB serial
+commands</a>. The initial assignment is:
+
+<dl>
+<dt>RA6 (pin 15) — GPIO A
+</dt><dd>Input
+</dd><dt>RA7 (pin 16) — GPIO B
+</dt><dd>Input
+</dd></dl>
+
+The LED and GPIO port configuration is stored in EEPROM so they will survive
+a power interruption. 
+<p>
+Details on how to connect the LEDs and other components to the I/O ports are
+described on a <a href="https://otgw.tclcode.com/peripherals.html">separate page</a>.
+
+</p><p>
+</p><h2 id="configuration">Serial commands</h2>
+<p>
+The operation of the gateway can be influenced by sending commands over the
+serial interface. All commands consist of a command code made up of two
+uppercase letters, an equals sign, and a data value. Commands are terminated
+by a carriage return character. A line feed character is optional. The
+gateway returns a response for each command it receives. Each response ends
+with a carriage return and a line feed character.
+The serial interface uses 8-bit data words with no parity and 1 stop bit at
+9600 baud.
+
+</p><h3 id="responses">Responses</h3>
+When a serial command is accepted by the gateway, it responds with the two
+letters of the command code, a colon, and the interpreted data value.
+<dl>
+<dt>Examples:
+</dt><dd>Command: "TT=19.125"
+</dd><dd>Response: "TT: 19.13"
+</dd></dl>
+
+If the gateway fails to parse the command, it produces one of the following
+responses:
+<dl>
+<dt>NG — No Good
+</dt><dd>The command code is unknown.
+</dd><dt>SE — Syntax Error
+</dt><dd>The command contained an unexpected character or was incomplete.
+</dd><dt>BV — Bad Value
+</dt><dd>The command contained a data value that is not allowed.
+</dd><dt>OR — Out of Range
+</dt><dd>A number was specified outside of the allowed range.
+</dd><dt>NS — No Space
+</dt><dd>The alternative Data-ID could not be added because the table is full.
+</dd><dt>NF — Not Found
+</dt><dd>The specified alternative Data-ID could not be removed because it does
+not exist in the table. 
+</dd><dt>OE — Overrun Error.
+</dt><dd>The processor was busy and failed to process all received characters.
+</dd></dl>
+<h3 id="commands">Commands</h3>
+The following serial commands are currently available:
+<dl>
+<dt id="cmdtt">TT=<i>temperature</i> <a href="#footnote">[*]</a>
+</dt><dd>Temperature, Temporary — Temporarily change the thermostat
+setpoint. The thermostat program will resume at the next programmed setpoint
+change.
+Values between 0.0 and 30.0 are allowed. A value of 0 indicates no remote
+override is to be applied.<br>
+Examples: TT=19.5, TT=0
+
+</dd><dt id="cmdtc">TC=<i>temperature</i> <a href="#footnote">[*]</a>
+</dt><dd>Temperature, Constant — Change the thermostat setpoint.
+The thermostat program will not change this setting.
+Values between 0.0 and 30.0 are allowed.
+A value of 0 cancels the remote override.<br>
+Examples: TC=16.0, TC=0
+
+</dd><dt id="cmdot">OT=<i>temperature</i>
+</dt><dd>Outside temperature — Configures the outside temperature to send
+to the thermostat.
+Allowed values are between -40.0 and +64.0, although thermostats may not
+display the full range.
+Clear the configured value by specifying a non-numeric value.<br>
+Examples: OT=-3.5, OT=-
+
+</dd><dt id="cmdsc">SC=<i>time/day</i> <a href="#footnote">[*]</a>
+</dt><dd>Set Clock — Change the time and day of the week of the thermostat.
+The gateway will send the specified time and day of the week in response to
+the next time and date message from the thermostat.
+The time must be specified as HH:MM. The day of the week must be specified
+as a single digit between 1 (Monday) and 7 (Sunday).<br> 
+Examples: SC=9:00/1, SC=23:59/4
+
+</dd><dt id="cmdhw">HW=<i>state</i>
+</dt><dd>Hot Water — Control the domestic hot water enable option.
+If the boiler has been configured to let the room unit control when to keep
+a small amount of water preheated, this command can influence that.
+A <i>state</i> of 0 or 1 will tell the boiler whether or not to keep the
+water warm.
+P will perform a DHW push (heat the water tank once).
+Any other single character causes the gateway to let the thermostat control
+the boiler.
+The DHW push functionality is experimental, and is only available in the
+PIC16F1847 firmware.
+Possible values are 0, 1, P, or any other single character.<br>
+Examples: HW=1, HW=P, HW=T
+
+</dd><dt id="cmdpr">PR=<i>item</i>
+</dt><dd>Print Report — Request the gateway to report some information
+item. The following items are currently defined:
+<ol type="A">
+<li value="1">About opentherm gateway (prints the welcome message)
+</li><li value="2">Build date and time
+</li><li value="3">The clock speed the code was compiled for (4 MHz)
+</li><li value="4">The DS18x20 temperature sensor function. O=Outside temperature,
+R=Return water temperature.
+</li><li value="5">Temperature measured by external temperature sensor
+(PIC16F1847 only).
+</li><li value="6">Check if the PIC can be flashed by otgwmcu (PIC16F1847 only).
+</li><li value="7">Configured functions for the two GPIO pins. The response will
+be 2 digits that represent the functions of GPIO A and GPIO B respectively.
+</li><li value="8">The configured maximum central heating setpoint upper bound (jorik90 custom).
+</li><li value="9">Current state of the two GPIO pins. The response will be 2
+digits that represent the level (0 or 1) of GPIO A and GPIO B respectively.
+</li><li value="10">The configured room temperature lower limit (jorik90 custom).
+</li><li value="12">Configured functions for all 6 LEDS. The response consists of
+6 letters representing the functions of LED A through LED F.
+</li><li value="13">Gateway mode. G=Gateway, M=Monitor.
+</li><li value="14">The currently configured message interval for stand-alone mode.
+</li><li value="15">Report the setpoint override value
+</li><li value="16">Current Smart-Power mode (low/medium/high).
+</li><li value="17">Cause of the last reset. Possible return values:
+<ol type="A">
+<li value="2">Brown out (supply voltage dropped below 4.35V on PIC16F88 or
+2.7V on PIC16F1847)
+</li><li value="3">By command (GW=R)
+</li><li value="5">External reset (using the reset button)
+</li><li value="12">Stuck in a loop (same message received 64x)
+</li><li value="15">Stack overflow (PIC16F1847 only)
+</li><li value="16">Power on
+</li><li value="19">BREAK condition on the serial interface
+</li><li value="21">Stack underflow (PIC16F1847 only)
+</li><li value="23">Watch dog timer
+</li></ol>
+</li><li value="18">The state of the automatic Remeha thermostat detection.
+</li><li value="19">The configured setback temperature.
+</li><li value="20">Tweaks. Reports the state of the ignore transitions and
+override in high byte settings. 
+</li><li value="22">Report the reference voltage setting
+</li><li value="23">Report the domestic hot water setting
+</li></ol>
+Examples: PR=L, PR=A
+
+</dd><dt id="cmdps">PS=<i>state</i>
+</dt><dd>Print Summary — The opentherm gateway normally prints every
+opentherm message it receives, as well as the modified messages it
+transmits.
+In some applications it may be more useful to only get a report of the
+latest values received for the most interesting parameters on demand.
+Issuing a "PS=1" command will stop the reports for each message and print
+one line with the following values:
+<ul>
+<li>Status (MsgID=0) — Printed as two 8-bit bit fields
+</li><li>Control setpoint (MsgID=1) — Printed as a floating point value
+</li><li>Remote parameter flags (MsgID=6) — Printed as two 8-bit bit fields
+</li><li>Cooling control signal (MsgID=7) — Printed as a floating point
+value
+</li><li>Control setpoint 2 (MsgID=8) — Printed as a floating point value
+</li><li>Maximum relative modulation level (MsgID=14) — Printed as a
+floating point value
+</li><li>Boiler capacity and modulation limits (MsgID=15) — Printed as two
+bytes
+</li><li>Room setpoint (MsgID=16) — Printed as a floating point value
+</li><li>Relative modulation level (MsgID=17) — Printed as a floating point
+value
+</li><li>CH water pressure (MsgID=18) — Printed as a floating point value
+</li><li>DHW flow rate (MsgID=19) — Printed as floating point value
+</li><li>CH2 room setpoint (MsgID=23) — Printed as a floating point value
+</li><li>Room temperature (MsgID=24) — Printed as a floating point value
+</li><li>Boiler water temperature (MsgID=25) — Printed as a floating point
+value
+</li><li>DHW temperature (MsgID=26) — Printed as a floating point value
+</li><li>Outside temperature (MsgID=27) — Printed as a floating point value
+</li><li>Return water temperature (MsgID=28) — Printed as a floating point
+value
+</li><li>CH2 flow temperature (MsgID=31) — Printed as a floating point value
+</li><li>Boiler exhaust temperature (MsgID=33) — Printed as a signed
+decimal value
+</li><li>DHW setpoint boundaries (MsgID=48) — Printed as two bytes
+</li><li>Max CH setpoint boundaries (MsgID=49) — Printed as two bytes
+</li><li>DHW setpoint (MsgID=56) — Printed as a floating point value
+</li><li>Max CH water setpoint (MsgID=57) — Printed as a floating point
+value
+</li><li>V/H master status (MsgID=70) — Printed as two 8-bit bit fields
+</li><li>V/H control setpoint (MsgID=71) — Printed as a byte
+</li><li>Relative ventilation (MsgID=77) — Printed as a byte
+</li><li>Burner starts (MsgID=116) — Printed as a decimal value
+</li><li>CH pump starts (MsgID=117) — Printed as a decimal value
+</li><li>DHW pump/valve starts (MsgID=118) — Printed as a decimal value
+</li><li>DHW burner starts (MsgID=119) — Printed as a decimal value
+</li><li>Burner operation hours (MsgID=120) — Printed as a decimal value
+</li><li>CH pump operation hours (MsgID=121) — Printed as a decimal value
+</li><li>DHW pump/valve operation hours (MsgID=122) — Printed as a decimal
+value
+</li><li>DHW burner operation hours (MsgID=123) — Printed as a decimal value
+</li></ul>
+A new report can be requested by repeating the "PS=1" command.<br>
+Examples: PS=1, PS=0
+
+</dd><dt id="cmdgw">GW=<i>state</i>
+</dt><dd>GateWay — The opentherm gateway initially starts up in back-to-back
+mode. While this is the most useful mode of operation, it also means that the
+firmware must be able to decode the requests received from the thermostat
+before it can send them on to the boiler.
+The same is true for responses from the boiler back to the thermostat.
+By changing this setting to "0" (monitor mode), the received signal level is
+passed through to the output driver without any processing.
+This can be a useful diagnostic tool when there are communication problems
+immediately after the gateway has been built.
+See the <a href="https://otgw.tclcode.com/debugging.html">troubleshooting</a> section for more
+information.
+The configured operating mode is stored in non-volatile memory, so the OTGW
+will resume in the selected mode after a reset.
+This command can also be used to reset the gateway by specifying "R" as the
+state value.<br>
+Examples: GW=1, GW=R
+
+</dd><dt id="cmdla">LA=<i>function</i>
+</dt><dt id="cmdlb">LB=<i>function</i>
+</dt><dt id="cmdlc">LC=<i>function</i>
+</dt><dt id="cmdld">LD=<i>function</i>
+</dt><dt id="cmdld">LE=<i>function</i>
+</dt><dt id="cmdld">LF=<i>function</i>
+</dt><dd>LED A / LED B / LED C / LED D / LED E / LED F — These commands can
+be used to configure the functions of the six LEDs that can optionally be
+connected to pins RB3/RB4/RB6/RB7 and the GPIO pins of the PIC. The
+following functions are currently available: 
+<ol type="A">
+<li value="18">Receiving an Opentherm message from the thermostat or boiler
+</li><li value="24">Transmitting an Opentherm message to the thermostat or boiler
+</li><li value="20">Transmitting or receiving a message on the master interface
+</li><li value="2">Transmitting or receiving a message on the slave interface
+</li><li value="15">Remote setpoint override is active
+</li><li value="6">Flame is on
+</li><li value="8">Central heating is on
+</li><li value="23">Hot water is on
+</li><li value="3">Comfort mode (Domestic Hot Water Enable) is on
+</li><li value="5">Transmission error has been detected
+</li><li value="13">Boiler requires maintenance
+</li><li value="16">Raised power mode active on thermostat interface.
+</li></ol>
+Examples: LC=F, LD=M
+
+</dd><dt id="cmdga">GA=<i>function</i>
+</dt><dt id="cmdgb">GB=<i>function</i>
+</dt><dd>GPIO A / GPIO B — These commands configure the functions of the
+two GPIO pins of the gateway. The following functions are available: 
+<ol start="0">
+<li>Input — A general digital input port. The state can be obtained
+using the PR=I command. This is the default for both ports on a freshly
+flashed chip.
+</li><li>Ground — A permanently low output (0V). Could be used for a power
+LED.
+</li><li>Vcc — A permanently high output (5V). Can be used as a short-proof
+power supply for some external circuitry used by the other GPIO port.
+</li><li>LED E — An additional LED if you want to present more than 4 LED
+functions.
+</li><li>LED F — An additional LED if you want to present more than 5 LED
+functions.
+</li><li>Home — Set thermostat to setback temperature when pulled low.
+</li><li>Away — Set thermostat to setback temperature when pulled high.
+</li><li>DS1820 (GPIO port B only) — Data line for a DS18S20, DS18B20, or
+DS1822 temperature sensor used to measure the outside temperature or return
+water temperature. A 4k7 resistor should be connected between GPIO port
+B and Vcc.
+</li><li>DHWBlock — Activate DHW blocking when pulled low (PIC16F1847 only).
+</li></ol>
+Examples: GA=2, GB=7
+
+</dd><dt id="cmdsb">SB=<i>Data-ID</i>
+</dt><dd>SetBack temperature — Configure the setback temperature to use in
+combination with GPIO functions HOME (5) and AWAY (6). Note: The SB command
+may need to store 2 bytes in EEPROM. This takes more time than it takes to
+transfer a command over the serial interface. If you immediately follow the
+SB command by more commands that store configuration data in EEPROM, the
+gateway may not be able to handle all commands. To avoid any problems when
+sending a sequence of configuration commands, send the SB command last.
+<br>
+Examples: SB=15, SB=16.5
+
+</dd><dt id="cmdts">TS=<i>function</i>
+</dt><dd>Temperature Sensor — Select the temperature sensor function.
+The following functions are available: 
+<ol type="A">
+<li value="15">Outside temperature
+</li><li value="18">Return water temperature
+</li></ol>
+Examples: TS=O, TS=R
+
+</dd><dt id="cmdaa">AA=<i>Data-ID</i>
+</dt><dd>Add Alternative — Add the specified Data-ID to the list of
+alternative commands to send to the boiler instead of a Data-ID that is
+known to be unsupported by the boiler.
+Alternative Data-IDs will always be sent to the boiler in a Read-Data
+request message with the data-value set to zero.
+The table of alternative Data-IDs is stored in non-volatile memory so it will
+persist even if the gateway has been powered off.
+Data-ID values from 1 to 255 are allowed.<br>
+Examples: AA=33, AA=117
+
+</dd><dt id="cmdda">DA=<i>Data-ID</i>
+</dt><dd>Delete Alternative — Remove the specified Data-ID from the list of
+alternative commands. Only one occurrence is deleted. If the Data-ID appears
+multiple times in the list of alternative commands, this command must be
+repeated to delete all occurrences. The table of alternative Data-IDs is
+stored in non-volatile memory so it will persist even if the gateway has
+been powered off.
+Data-ID values from 1 to 255 are allowed.<br>
+Examples: DA=116, DA=123
+
+</dd><dt id="cmdui">UI=<i>Data-ID</i>
+</dt><dd>Unknown ID — Inform the gateway that the boiler doesn't support the
+specified Data-ID, even if the boiler doesn't indicate that by returning an
+Unknown-DataId response. Using this command allows the gateway to send an
+alternative Data-ID to the boiler instead.<br>
+Examples: UI=18, UI=6
+
+</dd><dt id="cmdki">KI=<i>Data-ID</i>
+</dt><dd>Known ID — Start forwarding the specified Data-ID to the boiler
+again.
+This command resets the counter used to determine if the specified Data-ID
+is supported by the boiler.<br> 
+Examples: KI=18, KI=123
+
+</dd><dt id="cmdpm">PM=<i>Data-ID</i>
+</dt><dd>Priority Message — Specify a one-time priority message to be sent
+to the boiler at the first opportunity.
+If the specified message returns the number of Transparent Slave Parameters
+(TSPs) or Fault History Buffers (FHBs), the gateway will proceed to request
+those TSPs or FHBs.<br>
+Examples: PM=10, PM=72
+
+</dd><dt id="cmdsr">SR=<i>Data-ID</i>:<i>data</i>
+</dt><dd>Set Response — Configure a response to send back to the thermostat
+instead of the response produced by the boiler. The data argument is either
+one or two bytes separated by a comma.<br>
+Examples: SR=18:1,205, SR=70:14
+
+</dd><dt id="cmdcr">CR=<i>Data-ID</i>
+</dt><dd>Clear Response — Clear a previously configured response to send
+back to the thermostat.<br>
+Examples: CR=18, CR=70
+
+</dd><dt id="cmdsh">SH=<i>temperature</i>
+</dt><dd>Setpoint Heating — Set the maximum central heating setpoint.
+Return control of the central heating setpoint to the thermostat by
+specifying a temperature of 0.
+This command is only effective with boilers that support this function.<br>
+Examples: SH=72.5, SH=+20, SH=0
+
+</dd><dt id="cmdsw">SW=<i>temperature</i>
+</dt><dd>Setpoint Water — Set the domestic hot water setpoint.
+Return control of the hot water setpoint to the thermostat by specifying a
+temperature of 0.
+This command is only effective with boilers that support this function.<br>
+Examples: SW=60, SW=+40.0, SW=0
+
+</dd><dt id="cmdmm">MM=<i>percentage</i>
+</dt><dd>Maximum Modulation — Override the maximum relative modulation from
+the thermostat.
+Valid values are 0 through 100.
+Clear the setting by specifying a non-numeric value.<br> 
+Examples: MM=100, MM=T
+
+</dd><dt id="cmdcs">CS=<i>temperature</i>
+</dt><dd>Control Setpoint — Manipulate the control setpoint being sent to
+the boiler. Set to 0 to pass along the value specified by the thermostat.
+To stop the boiler heating the house, set the control setpoint to some low
+value and clear the CH enable bit using the CH command.
+A CS command with a value of 8 or higher must be repeated at least every
+minute as long as adjustment is needed.
+This is a vigilance check to prevent runaway heating in case the controlling
+program loses its connection, or crashes.<br>
+<b>Warning</b>: manipulating these values may severely impact the control
+algorithm of the thermostat, which may cause it to start heating much too
+early or too aggressively when it is actually in control.<br>
+Examples: CS=45.8, CS=0
+
+</dd><dt id="cmdc2">C2=<i>temperature</i>
+</dt><dd>Control Setpoint for 2<sup>nd</sup> CH circuit — Manipulate the
+control setpoint being sent to the boiler for the second CH circuit.
+Set to 0 to pass along the value specified by the thermostat.
+A C2 command with a value of 8 or higher must be repeated at least every
+minute as long as adjustment is needed.
+This is a vigilance check to prevent runaway heating in case the controlling
+program loses its connection, or crashes.
+<br>
+Examples: C2=45.8, C2=0
+
+</dd><dt id="cmdch">CH=<i>state</i>
+</dt><dd>Central Heating — When using external control of the control
+setpoint (via a CS command with a value other than 0), the gateway sends a
+CH enable bit in MsgID 0 that is controlled using the CH command.
+Initially this bit is set to 1.
+When external control of the control setpoint is disabled (CS=0), the CH
+enable bit is controlled by the thermostat.<br> 
+Examples: CH=0, CH=1
+
+</dd><dt id="cmdh2">H2=<i>state</i>
+</dt><dd>Central Heating 2<sup>nd</sup> circuit — When using external
+control of the control setpoint (via a C2 command with a value other than
+0), the gateway sends a CH2 enable bit in MsgID 0 that is controlled using
+the H2 command. Initially this bit is set to 1.
+When external control of the control setpoint is disabled (C2=0), the CH2
+enable bit is controlled by the thermostat.<br> 
+Examples: H2=0, H2=1
+
+</dd><dt id="cmdvs">VS=<i>percentage</i>
+</dt><dd>Ventilation Setpoint — Configure a ventilation setpoint override
+value.
+Clear the setting by specifying a non-numeric value.<br>
+Examples: VS=25, VS=100
+
+</dd><dt id="cmdrs">RS=<i>counter</i>
+</dt><dd>Reset — Clear boiler counter, if supported by the boiler.
+Available counter names are:
+<div style="margin:0pt 20pt">
+<table cellpadding="0" cellspacing="0">
+<tbody><tr>
+<td>HBS</td><td width="5px"></td><td>Central heating burner starts</td>
+</tr><tr>
+<td>HBH</td><td></td><td>Central heating burner operation hours</td>
+</tr><tr>
+<td>HPS</td><td></td><td>Central heating pump starts</td>
+</tr><tr>
+<td>HPH</td><td></td><td>Central heating pump operation hours</td>
+</tr><tr>
+<td>WBS</td><td></td><td>Domestic hot water burner starts</td>
+</tr><tr>
+<td>WBH</td><td></td><td>Domestic hot water burner operation hours</td>
+</tr><tr>
+<td>WPS</td><td></td><td>Domestic hot water pump starts</td>
+</tr><tr>
+<td>WPH</td><td></td><td>Domestic hot water pump operation hours</td>
+</tr>
+</tbody></table>
+</div>
+
+</dd><dt id="cmdit">IT=<i>state</i>
+</dt><dd>Ignore Transitions — If the opentherm signal doesn't cleanly
+transition from one level to the other, the circuitry may detect multiple
+transitions when there should only be one.
+When this setting is off (IT=0), the gateway will report "Error 01" for
+those cases.
+With this setting on (IT=1), any rapid bouncing of the signal is ignored.
+This is the default.<br>
+Examples: IT=0, IT=1
+
+</dd><dt id="cmdoh">OH=<i>state</i>
+</dt><dd>Override in High byte — The Opentherm specification contains
+contradicting information about which data byte of Data-ID 100 should hold
+the override bits. When this setting is off (OH=0), the gateway will only
+put the bits in the low byte. When the setting is on (OH=1), the bits are
+copied to the high byte so they appear in both bytes. This is the
+default.<br>
+Examples: OH=0, OH=1
+
+</dd><dt id="cmdft">FT=<i>model</i>
+</dt><dd>Force Thermostat — To be able to apply special treatment required
+by some thermostat models, the gateway will try to auto-detect which
+thermostat is connected.
+In some cases it is unable to determine this correctly.
+This configuration option can then be used to force the model. Valid models
+are: 'C' (Remeha Celcia 20), 'I' (Remeha iSense), and 'S' (Standard).
+Any other letter restores the default auto-detect functionality.<br>
+Examples: FT=C, FT=D
+
+</dd><dt id="cmdvr">VR=<i>level</i>
+</dt><dd>Voltage Reference — Change the reference voltage used as a
+threshold for the comparators.
+This configuration option is stored in non-volatile memory so it will
+persist even if the gateway has been powered off.
+The level must be specified as a single digit according to the following
+table:
+<div style="margin:8pt 20pt">
+<table border="1" cellspacing="0" cellpadding="3">
+<tbody><tr align="center">
+<td></td>
+<td>0</td>
+<td>1</td>
+<td>2</td>
+<td>3</td>
+<td>4</td>
+<td>5</td>
+<td>6</td>
+<td>7</td>
+<td>8</td>
+<td>9</td>
+</tr>
+<tr align="center">
+<td>PIC16F88</td>
+<td>0.625V</td>
+<td>0.833V</td>
+<td>1.042V</td>
+<td>1.250V</td>
+<td>1.458V</td>
+<td>1.667V</td>
+<td>1.875V</td>
+<td>2.083V</td>
+<td>2.292V</td>
+<td>2.500V</td>
+</tr>
+<tr align="center">
+<td>PIC16F1847</td>
+<td>0.832V</td>
+<td>0.960V</td>
+<td>1.088V</td>
+<td>1.216V</td>
+<td>1.344V</td>
+<td>1.472V</td>
+<td>1.600V</td>
+<td>1.728V</td>
+<td>1.856V</td>
+<td>1.984V</td>
+</tr>
+</tbody></table>
+</div>
+The normal value is 4 on a PIC16F88 and 5 on a PIC16F1847.<br>
+Examples: VR=3, VR=4
+
+</dd><dt id="cmddp">DP=<i>address</i>
+</dt><dd>Debug Pointer — Set the debug pointer to a file register.
+If the debug pointer has been set to a value other than 00, the contents of
+the selected file register will be reported over the serial interface.
+The report is repeated after each received OpenTherm message.
+The address must be specified in hexadecimal, using 2 characters on a
+PIC16F88, 2 or 3 characters on a PIC16F1847.
+Setting the pointer to 0 switches off the debug reports.<br>
+Examples: DP=1F, DP=1D0, DP=00
+</dd></dl>
+The following additional functions are only available in the PIC16F1847
+firmware:
+<dl>
+<dt id="cmdcl">CL=<i>percentage</i>
+</dt><dd>Cooling level — Configure a cooling control signal override value.
+Clear the setting by specifying a non-numeric value.<br>
+Examples: CL=75, CL=A
+
+</dd><dt id="cmdce">CE=<i>state</i>
+</dt><dd>Cooling enable — When using external control of the cooling plant
+(via the CL command), the gateway sends a cooling enable bit in MsgID 0 that
+can be manipulated using the CE command. Initially the bit is set to 1. When
+external control of the cooling plant is disabled, the cooling enable bit is
+controlled by the thermostat.<br>
+Examples: CE=1, CE=0
+
+</dd><dt id="cmdmh">MH=<i>mode</i> <a href="#footnote">[*]</a>
+</dt><dd>Mode, Heating — Set the operating mode for the primary heating
+circuit.
+Currently defined modes are: 0=No override, 1=Auto, 2=Comfort, 3=Precomfort,
+4=Reduced, 5=Protection, 6=Off.<br>
+Examples: MH=1, MH=0
+
+</dd><dt id="cmdm2">M2=<i>mode</i> <a href="#footnote">[*]</a>
+</dt><dd>Mode for 2<sup>nd</sup> CH circuit — Set the operating mode for the
+secondary heating circuit.
+Currently defined modes are: 0=No override, 1=Auto, 2=Comfort, 3=Precomfort,
+4=Reduced, 5=Protection, 6=Off.<br>
+Examples: M2=2, M2=0
+
+</dd><dt id="cmdmw">MW=<i>mode</i> <a href="#footnote">[*]</a>
+</dt><dd>Mode, Water — Set the operating mode for domestic hot water.
+Currently defined modes are: 0=No override, 1=Auto, 2=Anti-Legionella,
+3=Comfort, 4=Reduced, 5=Protection, 6=Off.<br>
+Examples: MW=4, MW=0
+
+</dd><dt id="cmdrr">RR=<i>code</i>
+</dt><dd>Remote Request — Send a special service request to the boiler<br>
+Make sure to only invoke a command when the appropriate conditions are met.
+For example, requesting remote filling (RR=2) is only allowed when the remote
+filling function bit is not set (ID3:HB6) and the boiler indicated a fault
+(ID0:LB0) due to low water pressure (ID5:HB2). The OTGW does not enforce
+these rules.<br>
+Currently defined remote requests are:
+<ol>
+<li value="0">Back to normal operation mode
+</li><li>Boiler Lock-out Reset request
+</li><li>CH water filling request
+</li><li>Service mode maximum power request (aka chimney sweep function)
+</li><li>Service mode minimum power request (for CO2 measurement)
+</li><li>Service mode spark test request (no gas)
+</li><li>Service mode fan maximum speed request (no flame)
+</li><li>Service mode fan to minimum speed request (no flame)
+</li><li>Service mode 3-way valve to CH request (no pump, no flame)
+</li><li>Service mode 3-way valve to DHW request (no pump, no flame)
+</li><li>Request to reset service request flag
+</li><li>Service test 1 (OEM specific)
+</li><li>Automatic hydronic air purge
+</li></ol>
+Examples: RR=2, RR=0
+
+</dd><dt id="cmdtp">TP=<i>id</i>:<i>entry</i>[=<i>value</i>]
+</dt><dd>Transparent Parameter — Read or write an individual Transparent
+Slave Parameter (TSP).
+This command can also be used to read individual Fault History Buffer (FHB)
+entries. FHB entries can not be written.
+Boiler manufacturers are free to define the meaning of TSPs and FHBs.<br>
+Examples: TP=11:5, TP=106:3=12
+
+</dd><dt id="cmdsm">SM=<i>state</i>
+</dt><dd>Set summer mode. Indicate to the boiler when summer condition is in
+effect. It depends on the boiler which effect this setting will have. When
+<i>state</i> is 1, summer mode is forced active. When <i>state</i> is 0, the
+thermostat controls the summer/winter mode. There is no option to force
+winter mode.<br>
+Examples: SM=1, SM=0
+
+</dd><dt id="cmdbw">BW=<i>state</i>
+</dt><dd>DHW blocking. Switch off all DHW functions of the boiler. This can be
+used when some other equipment will provide DHW, like a solar boiler.
+When <i>state</i> is 1, DHW blocking is forced on. When <i>state</i> is 0,
+the thermostat controls DHW blocking. There is no option to force DHW
+blocking to off.<br>
+
+</dd><dt id="cmdbs">BS=<i>temperature</i>
+</dt><dd>Boiler setpoint. Some heat pumps ignore certain controls sent by the
+thermostat and base their operation on the reported room temperature and
+room setpoint values. This command can be used to override the room setpoint
+sent by the thermostat, or to specify it when either the thermostat doesn't
+send this information or the OTGW is running stand-alone.
+In the latter cases it will also be necessary to instruct the OTGW to
+periodically inject a Room Setpoint message into its communication with the
+boiler using the <a href="#cmdaa">AA=16</a> command.
+Set the temperature to 0 to return to passing along the value specified by
+the thermostat.<br>
+Examples: BS=16.3, BS=0
+
+</dd><dt id="cmdrt">RT=<i>temperature</i>
+</dt><dd>Room temperature. Some heat pumps ignore certain controls sent by the
+thermostat and base their operation on the reported room temperature and
+room setpoint values. This command can be used to override the room
+temperature sent by the thermostat, or to specify it when either the
+thermostat doesn't send this information or the OTGW is running stand-alone.
+In the latter cases it will also be necessary to instruct the OTGW to
+periodically inject a Room Temperature message into its communication with
+the boiler using the <a href="#cmdaa">AA=24</a> command.
+Set the temperature to 0 to return to passing along the value specified by
+the thermostat.<br>
+Examples: RT=20.5, RT=0
+
+</dd><dt id="cmdmi">MI=<i>milliseconds</i>
+</dt><dd>Message interval. In stand-alone mode, the OTGW normally sends one
+message per second. If information needs to be collected faster than that,
+the message interval can be configured. This command specifies the number of
+milliseconds the OTGW waits after receiving a message from the boiler before
+it sends the next request. The specifications define that there must be a
+gap of at least 100 ms. For this reason values below 100 ms are not accepted.
+The specifications also say that a message must be sent at least every second.
+Whichever condition happens first determines when the OTGW sends the next
+message.
+Valid values are 100 to 1275. Values are rounded to the nearest multiple of
+5 ms.
+Set the interval to 1000 (or higher) to send messages at the normal rate of
+one per second.<br>
+Examples: MI=300, MI=1000
+
+</dd><dt id="cmdfs">FS=<i>state</i>
+</dt><dd>Fail safe feature. When the OTGW encounters an internal error that leads
+to a reset due to the watchdog timer expiring, it falls back to fail safe
+mode. In this mode the thermostat directly controls the boiler.
+If one of the reasons the OTGW was introduced into the installation is to
+handle some incompatibilities between the thermostat and the boiler, this
+may be undesirable.
+If the system is expected to work worse in fail safe mode than with a bug in
+the firmware that may cause a sporadic reset, the fail safe feature can be
+switched off with an FS=0 command. Use FS=1 to turn it back on.<br>
+Examples: FS=0, FS=1
+
+</dd><dt id="cmdlt">LT=<i>temperature</i> (jorik90 custom)
+</dt><dd>Low Temperature limit (jorik90 custom) — Configure a lower limit for room
+temperature reports (MsgID 24) from the thermostat. When the thermostat sends a
+room temperature below this threshold (when <a href="#cmdrt">RT</a> is not
+active), the gateway replaces the value with the last valid room temperature
+received, or turns the message into an Invalid-Data request if no valid room
+temperature has been received yet.
+Specify a value of 0 to disable the limit.<br>
+Examples: LT=5.0, LT=0
+
+</dd><dt id="cmdhm">HM=<i>temperature</i> (jorik90 custom)
+</dt><dd>Heating Maximum (jorik90 custom) — Configure a lower maximum central
+heating setpoint upper bound to report to the thermostat in MsgID 49 responses
+from the boiler.
+Valid values are between the boiler's minimum and maximum central heating
+setpoint bounds (default 10 through 90).
+Specify a value of 0 to disable the cap.<br>
+Examples: HM=60, HM=0
+</dd></dl>
+
+<p id="footnote">[*] These functions are only available if supported by the
+thermostat.</p>
+<h2 id="selfprog">Self Programming</h2>
+
+Both the PIC16F88 and PIC16F1847 are able to read and write their own flash
+memory. The gateway takes advantage of this possibility and allows the
+firmware to be upgraded over the serial connection.
+
+The method used to update the firmware is a slightly modified version of
+<a href="http://ww1.microchip.com/downloads/en/appnotes/00851b.pdf">Microchip
+Application Note AN851</a>.
+
+A new, blank PIC will need to be programmed initially using a PIC programmer.
+But once it is loaded with firmware that includes the boot loader, any
+subsequent firmware updates can be done via the self programming mechanism
+implemented in <a href="http://otgw.tclcode.com/otmonitor.html">OTmonitor</a>.
+<!--
+To put it differently:
+<a href="http://otgw.tclcode.com/otmonitor.html">OTmonitor</a> can update
+the firmware, but it can not install it.
+-->
+<p>
+There are three methods to enter self programming mode:
+</p><ol>
+<li>Power-up or reset the device.
+</li><li>Send a break condition on the serial line.
+</li><li>Issue a GW=R command.
+</li></ol>
+In response to either of these events, the firmware transmits an &lt;ETX&gt;
+character. If no serial input is received within one second, or the first
+received serial character is something other than &lt;STX&gt;, the device
+does not enter self-programming mode and resumes normal operation. 
+<p>
+
+</p><h3 id="upgrade">Self-programming code upgrade</h3>
+The self-programming code is part of the firmware, and modifying code while
+it is being executed is not a good idea. So any self-programming tools must
+make sure not to touch that part of the firmware during a normal upgrade.
+The Firmware Upgrade feature of the Opentherm Monitor does indeed skip the
+memory area containing the self-programming code when loading new firmware.
+<p>
+However, it may occasionally be desirable to upgrade the self-programming
+code to fix a bug in that part. This is done using a special firmware image.
+
+Such a self-programming upgrade firmware image contains a copy of the new
+self-programming code in a different memory area, plus the code necessary to
+move it into place. After the image has been loaded, the code that installs
+the new self-programming code will run. This should only take about a second.
+A message is printed when the process has completed.
+</p><p>
+The self-programming code upgrade firmware configures the comparators to
+pass-through mode, which allows communication between the thermostat and the
+boiler to take place. To restore the full functionality of the gateway, the
+regular gateway firmware image must be reloaded.
+</p><p>
+The self-programming upgrade firmware has been designed in such a way that
+the device is in an unbootable state for as little time as possible.
+However there are a few microseconds in the upgrade process where it cannot
+be guaranteed that the device will be able to boot if the power is removed
+at that point. So, it is strongly advised to make sure the upgrade is
+allowed to complete uninterrupted.
+
+In the unlikely case that the device does become unbootable, a PIC
+programmer will be needed to bring the gateway back to life.
+</p></td>
+</tr>
+</tbody></table>
+
+
+</body></html>

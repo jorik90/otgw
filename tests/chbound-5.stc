@@ -1,0 +1,36 @@
+test "HM configuration with default bounds before MsgID 49"
+
+constraint p16f1847
+
+load boiler.stc
+load thermostat.stc
+
+go 1500000
+clearalttable
+
+# Default bounds before any boiler MsgID 49 response are 10..90
+# Below default min (10) -> BV
+Serial.tx = "HM=9\r"
+go 2500000
+check {HM: BV}
+
+# Exact default min (10) -> accepted
+Serial.tx = "HM=10\r"
+go 3500000
+check {HM: 10}
+
+# Exact default max (90) -> accepted
+Serial.tx = "HM=90\r"
+go 4500000
+check {HM: 90}
+
+# Above default max (90) -> BV
+Serial.tx = "HM=91\r"
+go 5500000
+check {HM: BV}
+
+# Disabling cap with HM=0 -> accepted
+Serial.tx = "HM=0\r"
+go 6500000
+check {HM: 0}
+

@@ -1,0 +1,82 @@
+test "HM command validation and PR=H readback and EEPROM"
+
+constraint p16f1847
+
+load boiler.stc
+# Boiler reports CH bounds max=75, min=20 once MsgID 49 is queried
+Thermostat.tx = 0x80310000
+Thermostat.interval = 0.15
+
+go 1500000
+clearalttable
+
+go 2500000
+check {B[4C]0314B14}
+
+# Default PR=H is 0
+Serial.tx = "PR=H\r"
+go 3500000
+check {PR: H=0}
+
+# Below boiler min (20) -> BV
+Serial.tx = "HM=19\r"
+go 4500000
+check {HM: BV}
+
+# Exact boiler min (20) -> accepted
+Serial.tx = "HM=20\r"
+go 5000000
+check {HM: 20}
+
+# Above boiler max (75) -> BV
+Serial.tx = "HM=76\r"
+go 5500000
+check {HM: BV}
+
+# Exact boiler max (75) -> accepted
+Serial.tx = "HM=75\r"
+go 6000000
+check {HM: 75}
+
+# Syntax error on non-integer or trailing chars
+Serial.tx = "HM=55.5\r"
+go 6500000
+check {HM: SE}
+
+Serial.tx = "HM=abc\r"
+go 7000000
+check {HM: SE}
+
+Serial.tx = "HM=-5\r"
+go 7500000
+check {HM: SE}
+
+Serial.tx = "HM=300\r"
+go 8000000
+check {HM: OR}
+
+Serial.tx = "HM=\r"
+go 8500000
+check {(?n)^SE}
+
+Serial.tx = "PR=H=\r"
+go 9000000
+check {PR: SE}
+
+# Valid HM=55
+Serial.tx = "HM=55\r"
+go 9500000
+check {HM: 55}
+
+Serial.tx = "PR=H\r"
+go 10500000
+check {PR: H=55}
+
+# SH validation still uses real boiler max (75), so SH=70 is accepted
+Serial.tx = "SH=70\r"
+go 11500000
+check {SH: 70.00}
+
+# Verify EEPROM at 0xC2 holds 55
+eeprom 0xc2 55
+

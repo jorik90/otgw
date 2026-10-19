@@ -44,7 +44,7 @@ jobs:
       - name: Build chmodule
         run: |
           cd chmodule
-          ./autogen.sh
+          sh autogen.sh
           ./configure
           make
 

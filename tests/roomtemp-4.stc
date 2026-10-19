@@ -1,0 +1,46 @@
+test "fractional LT limit (0.5) and combination with RT"
+
+constraint p16f1847
+
+load boiler.stc
+Boiler.response = 0x50180000
+
+Thermostat.tx = 0x10180000
+Thermostat.interval = 0.15
+Thermostat.temperature = 20.0
+
+go 1500000
+clearalttable
+Serial.tx = "LT=0.5\r"
+
+go 3000000
+check {LT: 0.50}
+check {B[5D]0181400}
+
+# 0.25 is below 0.5 -> replaced with 20.0
+mark
+Thermostat.temperature = 0.25
+go 5000000
+check {T[19]0180040}
+check {R[19]0181400}
+
+# When RT is also configured, RT takes precedence over LT
+mark
+Serial.tx = "RT=18.5\r"
+go 7000000
+check {RT: 18.50}
+check {R[19]0181280}
+
+# Clearing RT=0 restores LT filtering with last valid temperature (20.0)
+mark
+Serial.tx = "RT=0\r"
+go 9000000
+check {RT: 0.00}
+check {R[19]0181400}
+
+# Verify PR=J and EEPROM storage at 0xC0
+Serial.tx = "PR=J\r"
+go 10000000
+check {PR: J=0.50}
+eeprom 0xc0 0.5
+

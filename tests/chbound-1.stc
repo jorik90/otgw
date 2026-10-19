@@ -1,0 +1,47 @@
+test "cap maximum CH setpoint upper bound in MsgID 49"
+
+constraint p16f1847
+
+load boiler.stc
+# Boiler reports CH bounds max=75 (0x4B), min=20 (0x14)
+
+go 1500000
+clearalttable
+# Set upper bound cap to 80 (higher than boiler's 75) while default max=90 is active
+Serial.tx = "HM=80\r"
+
+go 2500000
+check {HM: 80}
+
+Thermostat.tx = 0x80310000
+Thermostat.interval = 0.15
+
+# Boiler's 75 is below HM=80: no modification
+go 4500000
+check {B[4C]0314B14}
+check {A[4C]031....} ""
+
+# Set upper bound cap to 60 (0x3C): response capped to 60
+mark
+Serial.tx = "HM=60\r"
+go 6500000
+check {HM: 60}
+check {B[4C]0314B14}
+check {A[4C]0313C14}
+
+# Equal to boiler's 75: no modification
+mark
+Serial.tx = "HM=75\r"
+go 8500000
+check {HM: 75}
+check {B[4C]0314B14}
+check {A[4C]031....} ""
+
+# Disable cap with HM=0: no modification
+mark
+Serial.tx = "HM=0\r"
+go 10500000
+check {HM: 0}
+check {B[4C]0314B14}
+check {A[4C]031....} ""
+

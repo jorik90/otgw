@@ -1,0 +1,34 @@
+test "room temperature below limit before any valid reading sends Invalid-Data"
+
+constraint p16f1847
+
+load boiler.stc
+Boiler.response = 0x50180000
+
+go 1500000
+clearalttable
+Serial.tx = "LT=5.0\r"
+
+go 2000000
+check {LT: 5.00}
+
+Thermostat.tx = 0x10180000
+Thermostat.interval = 0.15
+Thermostat.temperature = 2.0
+
+go 4000000
+check {T[19]0180200}
+check {R[2A]0180200}
+
+# Once a valid reading arrives, subsequent low readings use that valid value
+mark
+Thermostat.temperature = 19.0
+go 6000000
+check {B[5D]0181300}
+
+mark
+Thermostat.temperature = 1.0
+go 8000000
+check {T[19]0180100}
+check {R[19]0181300}
+

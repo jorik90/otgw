@@ -2,9 +2,10 @@
 		list		p=16F1847, b=8, r=dec
 
 ;Copyright (c) 2022 - Schelte Bron
+;Custom version 6.9 (alpha) by jorik90
 
-#define		version		"6.8"
-#define		phase		"."	;a=alpha, b=beta, .=production
+#define		version		"6.9"
+#define		phase		"a"	;a=alpha, b=beta, .=production
 ;#define	patch		"8"	;Comment out when not applicable
 ;#define	bugfix		"1"	;Comment out when not applicable
 #include	build.asm
@@ -54,7 +55,14 @@
 ;VS=25		Override the ventilation setpoint from the thermostat.
 ;MM=40		Override the maximum relative modulation from the thermostat
 ;SH=72.0	Set the maximum central heating setpoint.
+;HM=60		Set the maximum central heating setpoint bound reported to the
+;		thermostat. Use 0 to disable. (jorik90 custom)
 ;SW=60.0	Set the domestic hot water setpoint.
+;LT=5.0		Set room temperature lower limit. Room temperature reports
+;		(MsgID 24) below this value are replaced with the last
+;		valid reading. Use 0 to disable. (jorik90 custom)
+;BS=16.3	Specify a fake room setpoint to send to the boiler.
+;RT=20.5	Specify a fake room temperature to send to the boiler.
 ;SC=14:45/6	Set the clock and the day of the week, 1 = Monday, 7 = Sunday
 ;VR=5		Adjust the reference voltage between 0.8V and 2.0V
 ;HW=1		Control DHW. P to start manual DHW push. A or T for thermostat.
@@ -103,12 +111,19 @@
 ;		A: About opentherm gateway (prints the welcome message)
 ;		B: Build date and time
 ;		C: Clock speed of the PIC
+;		D: Temperature sensor function
+;		E: Temperature measured by external temperature sensor
+;		F: Check if the PIC can be flashed by otgwmcu
 ;		G: Report the GPIO pin configuration
+;		H: Configured maximum central heating setpoint upper bound (jorik90 custom)
 ;		I: Report the GPIO pin input states
+;		J: Configured room temperature lower limit (jorik90 custom)
 ;		L: Configured LED functions. This prints a string like FXOMPC
 ;		M: Report the gateway mode
+;		N: Configured message interval for stand-alone mode
 ;		O: Setpoint override
 ;		P: Current Smart-Power mode.
+;		Q: Cause of the last reset
 ;		R: The state of the automatic Remeha thermostat detection.
 ;		S: Print the configured setback temperature
 ;		T: Tweak settings: Ignore Transition and Override in High Byte
@@ -560,7 +575,14 @@ BreakTimer	res	1
 #define		NoBreak		BreakTimer,5	;Set after 32 TMR0 overflows
 resetreason	res	1
 
-; 4 bytes remaining in Bank 1
+roomtemplimit1	res	1	;High byte of room temperature lower limit
+roomtemplimit2	res	1	;Low byte of room temperature lower limit
+lastroomtemp1	res	1	;High byte of last valid room temperature
+lastroomtemp2	res	1	;Low byte of last valid room temperature
+#define		NoLastRoomTemp	lastroomtemp1,7	;Set when no valid room temp seen
+chboundmax	res	1	;Configured upper bound for MsgID 49
+
+; 11 bytes remaining in Bank 1
 
 Bank2data	UDATA
 ;Keep track of the data values of up to 40 DataID's
@@ -1227,6 +1249,18 @@ WaitConvert	btfsc	ADCON0,GO	;Check that A/D conversion is finished
 		bsf	initflags,INITSH
 		call	ReadEpromNext
 		movwf	maxchsetpoint2
+
+		movlw	RoomTempLimit
+		call	ReadEpromData
+		movlb	1		;Bank 1
+		movwf	roomtemplimit1
+		call	ReadEpromNext
+		movlb	1		;Bank 1
+		movwf	roomtemplimit2
+		call	ReadEpromNext
+		movlb	1		;Bank 1
+		movwf	chboundmax
+		bsf	NoLastRoomTemp	;No valid room temperature seen yet
 
 		banksel	RCSTA		;Bank 3
 		btfss	FailSafeMode
@@ -2168,9 +2202,9 @@ PrintTable	retlw	PrintSettingA	;PR=A
 		goto	PrintSettingE	;PR=E
 		goto	PrintSettingF	;PR=F
 		goto	PrintSettingG	;PR=G
-		retlw	BadValue	;PR=H
+		goto	PrintSettingH	;PR=H
 		goto	PrintSettingI	;PR=I
-		retlw	BadValue	;PR=J
+		goto	PrintSettingJ	;PR=J
 		retlw	BadValue	;PR=K
 		retlw	PrintSettingL	;PR=L
 		goto	PrintSettingM	;PR=M
@@ -2305,6 +2339,23 @@ PrintSetback	movlw	AwaySetpoint
 		movwf	float1
 		pcall	ReadEpromNext
 		movwf	float2
+		goto	PrintFloat
+
+;Print configured maximum central heating setpoint upper bound (PR=H, jorik90 custom)
+PrintSettingH	call	PrintSettingID
+		banksel	chboundmax	;Bank 1
+		movfw	chboundmax
+		movlb	0		;Bank 0
+		goto	PrintByte
+
+;Print configured room temperature lower limit (PR=J, jorik90 custom)
+PrintSettingJ	call	PrintSettingID
+		banksel	roomtemplimit1	;Bank 1
+		movfw	roomtemplimit1
+		movwf	float1
+		movfw	roomtemplimit2
+		movwf	float2
+		movlb	0		;Bank 0
 		goto	PrintFloat
 
 PrintSettingD	call	PrintSettingID
@@ -3055,17 +3106,55 @@ MessageID20	btfss	MsgResponse
 		movfw	clock2
 		goto	setbyte4
 
-;Send a user specified room temperature to the boiler
+;Send a user specified room temperature to the boiler, or filter out room
+;temperature reports below the configured lower limit (jorik90 custom).
 ;Some heat pumps implement their own control mechanism based on room setpoint
 ;and temperature, rather than the control setpoint
-MessageID24	btfss	MsgResponse
-		btfsc	NoFakeRoomTemp
+MessageID24	btfsc	MsgResponse
 		goto	WordResponse
+		btfsc	NoFakeRoomTemp
+		bra	MsgID24CheckLim
 		movfw	fakeroomtemp1
 		call	setbyte3
 		movfw	fakeroomtemp2
 		call	setbyte4
 		goto	messagewrite
+MsgID24CheckLim	btfsc	AlternativeUsed
+		return			;Only filter genuine thermostat requests
+		banksel	roomtemplimit1	;Bank 1
+		movfw	roomtemplimit1
+		iorwf	roomtemplimit2,W
+		skpnz
+		bra	MsgID24Valid	;Limit not configured, record and pass
+		btfsc	byte3,7		;Negative temperature?
+		bra	MsgID24Discard	;Below limit, discard
+		movfw	roomtemplimit1
+		subwf	byte3,W
+		skpz
+		bra	MsgID24Compare
+		movfw	roomtemplimit2
+		subwf	byte4,W
+MsgID24Compare	skpc			;Carry set if room temp >= limit
+		bra	MsgID24Discard	;Room temp < limit, discard
+MsgID24Valid	movfw	byte3
+		movwf	lastroomtemp1	;Also clears NoLastRoomTemp (bit 7 = 0)
+		movfw	byte4
+		movwf	lastroomtemp2
+		movlb	0		;Bank 0
+		return
+MsgID24Discard	btfsc	NoLastRoomTemp
+		bra	MsgID24Invalid
+		movfw	lastroomtemp1
+		movlb	0		;Bank 0
+		call	setbyte3
+		banksel	lastroomtemp2	;Bank 1
+		movfw	lastroomtemp2
+		movlb	0		;Bank 0
+		call	setbyte4
+		goto	StoreValue
+MsgID24Invalid	movlb	0		;Bank 0
+		movlw	T_INV
+		goto	setbyte1
 
 ;Return the outside temperature, if specified via the serial interface
 MessageID27	btfsc	ExternalSensor	;Not using an external sensor
@@ -3120,6 +3209,7 @@ MessageID48	btfss	MsgResponse
 		goto	WordResponse
 
 ;Keep track of the boundaries for central heating reported by the boiler
+;Optionally cap the upper boundary reported to the thermostat (HM=, jorik90 custom)
 MessageID49	btfss	MsgResponse
 		return
 		bcf	initflags,INITCH;Received Heating Boundaries response
@@ -3129,6 +3219,19 @@ MessageID49	btfss	MsgResponse
 		movwf	chsetpointmax	;Remember upper boundary
 		movfw	byte4
 		movwf	chsetpointmin	;Remember lower boundary
+		btfsc	AlternativeUsed
+		goto	WordResponse	;Alternative response not for thermostat
+		banksel	chboundmax	;Bank 1
+		movfw	chboundmax
+		movlb	0		;Bank 0
+		skpnz
+		goto	WordResponse	;No bound configured
+		subwf	byte3,W		;W = byte3 - chboundmax
+		skpnc			;Carry set if byte3 >= chboundmax
+		skpnz			;And non-zero if byte3 > chboundmax
+		goto	WordResponse	;Boiler max <= configured bound
+		subwf	byte3,W		;W = byte3 - (byte3 - chboundmax) = chboundmax
+		call	setbyte3
 		goto	WordResponse
 
 ;Pass on user defined boundaries for domestic hot water to the boiler
@@ -3745,7 +3848,7 @@ SerialCmdTable	goto	SerialCmd00	; AA, MM, RR, TT commands
 		goto	SerialCmd02	; PR, KI commands
 		goto	SerialCmd03	; PS command
 		goto	SerialCmd04	; MI, SW, TP, VR commands
-		goto	SerialCmd05	; DA, GB, MH, VS commands
+		goto	SerialCmd05	; DA, GB, HM, MH, VS commands
 		goto	SerialCmd06	; CE, GA, RT commands
 		goto	SerialCmd07	; OH, TS commands
 		goto	SerialCmdLED	; LD command
@@ -3768,7 +3871,7 @@ SerialCmdTable	goto	SerialCmd00	; AA, MM, RR, TT commands
 		goto	SerialCmd15	; BW, FS command
 		retlw	CommandNG
 		goto	SerialCmd17	; TC command
-		retlw	CommandNG
+		goto	SerialCmd18	; LT command
 		retlw	CommandNG
 		goto	SerialCmd1A	; MW command
 		goto	SerialCmd1B	; OT, SH commands
@@ -3844,6 +3947,9 @@ SerialCmd05	movfw	INDF1
 		xorlw	'V' ^ 'M'
 		skpnz
 		goto	SetOperModeHC1
+		xorlw	'M' ^ 'H'
+		skpnz
+		goto	SetHeatingMax
 		goto	SerialCmdGPIO
 
 SerialCmd06	movfw	INDF1
@@ -3925,6 +4031,12 @@ SerialCmd17	movfw	INDF1
 		xorlw	'T'
 		skpnz
 		goto	SetContSetPoint
+		retlw	CommandNG
+
+SerialCmd18	movfw	INDF1
+		xorlw	'L'
+		skpnz
+		goto	SetRoomTempLim
 		retlw	CommandNG
 
 SerialCmd1A	movfw	INDF1
@@ -4307,6 +4419,46 @@ SetRoomTemp	call	GetPercentArg
 		skpnz
 		bsf	NoFakeRoomTemp
 		goto	CommandFloat
+
+;Set room temperature lower limit (LT=, jorik90 custom)
+SetRoomTempLim	call	GetPercentArg
+		skpnc
+		return
+		banksel	roomtemplimit1	;Bank 1
+		movwf	roomtemplimit1
+		movfw	float2
+		movwf	roomtemplimit2
+		movlb	0		;Bank 0
+		movlw	RoomTempLimit	;EEPROM address
+		call	StoreFloat	;Store a float value in EEPROM
+		goto	CommandFloat
+
+;Set maximum central heating setpoint upper bound cap (HM=, jorik90 custom)
+SetHeatingMax	call	GetDecimalArg
+		skpnc
+		return
+		tstf	INDF1
+		skpz
+		retlw	SyntaxError	;Characters following the value
+		tstf	temp
+		skpnz
+		bra	HeatingMaxOK
+		subwf	chsetpointmin,W
+		skpc
+		bra	HeatingMaxMinOK
+		skpz
+		retlw	BadValue
+HeatingMaxMinOK	movfw	temp
+		subwf	chsetpointmax,W
+		skpc
+		retlw	BadValue
+HeatingMaxOK	movfw	temp
+		banksel	chboundmax	;Bank 1
+		movwf	chboundmax
+		movlb	0		;Bank 0
+		movlw	CHBoundMax	;EEPROM address
+		call	WriteEpromData	;Save in EEPROM
+		lgoto	PrintTemp
 
 SetDebugPtr	call	CmdArgPointer
 		movfw	rxpointer
@@ -5514,6 +5666,10 @@ ResetReasonStr	de	'W'	;Watchdog timer time-out
 		de	'U'	;Stack underflow
 		de	'L'	;Stuck in a loop (same message for 64 sec)
 		de	'E'	;External reset (using the reset button)
+
+		org	0xf0C0
+RoomTempLimit	de	0, 0
+CHBoundMax	de	0
 
 		org	0xf0D0
 UnknownFlags	de	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
