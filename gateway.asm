@@ -587,6 +587,8 @@ chboundmax	res	1	;Configured upper bound for MsgID 49
 Bank2data	UDATA
 ;Keep track of the data values of up to 40 DataID's
 valuestorage	res	80	;2 bytes per DataID for up to 40 DataID's
+#define		roomtempval1	valuestorage + 24
+#define		roomtempval2	valuestorage + 25
 #define		outsideval1	valuestorage + 30
 #define		outsideval2	valuestorage + 31
 #define		returnwater1	valuestorage + 32
@@ -3165,7 +3167,10 @@ MsgID24Discard	btfsc	NoLastRoomTemp
 		movlb	0		;Bank 0
 		call	setbyte4
 		goto	StoreValue
-MsgID24Invalid	movlb	0		;Bank 0
+MsgID24Invalid	banksel	roomtempval1	;Bank 2
+		clrf	roomtempval1
+		clrf	roomtempval2
+		movlb	0		;Bank 0
 		movlw	T_INV
 		call	setbyte1
 		bsf	OverrideUsed
@@ -3235,16 +3240,16 @@ MessageID49	btfss	MsgResponse
 		movfw	byte4
 		movwf	chsetpointmin	;Remember lower boundary
 		btfsc	AlternativeUsed
-		goto	WordResponse	;Alternative response not for thermostat
+		return			;Alternative response not for thermostat
 		banksel	chboundmax	;Bank 1
 		movfw	chboundmax
 		movlb	0		;Bank 0
 		skpnz
-		goto	WordResponse	;No bound configured
+		goto	ClearWordResp	;No bound configured
 		subwf	byte3,W		;W = byte3 - chboundmax
 		skpnc			;Carry set if byte3 >= chboundmax
 		skpnz			;And non-zero if byte3 > chboundmax
-		goto	WordResponse	;Boiler max <= configured bound
+		goto	ClearWordResp	;Boiler max <= configured bound
 		subwf	byte3,W		;W = chboundmax
 		subwf	byte4,W		;W = byte4 - chboundmax
 		skpc			;Carry set if byte4 >= chboundmax
@@ -3253,7 +3258,7 @@ MessageID49	btfss	MsgResponse
 		bra	SetBoundMax
 UseBoundMax	subwf	byte4,W		;W = byte4 - (byte4 - chboundmax) = chboundmax
 SetBoundMax	call	setbyte3
-		goto	WordResponse
+		goto	ClearWordResp
 
 ;Pass on user defined boundaries for domestic hot water to the boiler
 MessageID56	btfsc	MsgResponse

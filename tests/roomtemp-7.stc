@@ -19,6 +19,10 @@ check {LT: 5.00}
 check {T[19]018FD80}
 check {R[2A]018FD80}
 check {A[5D]018FD80}
+reg(valuestorage+24)
+check {REG[[:xdigit:]]+\[0x[[:xdigit:]]+\] = (0x\S+)} {0x0}
+reg(valuestorage+25)
+check {REG[[:xdigit:]]+\[0x[[:xdigit:]]+\] = (0x\S+)} {0x0}
 
 # Valid positive temperature arrives: passes through and becomes last valid
 mark
