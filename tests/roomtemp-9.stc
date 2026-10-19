@@ -1,0 +1,25 @@
+test "read request for MsgID 24 is not filtered by LT"
+
+constraint p16f1847
+
+load boiler.stc
+Boiler.response = 0x40180000
+
+go 1500000
+clearalttable
+
+# Configure LT limit of 15.0 degrees
+Serial.tx = "LT=15.0\r"
+go 3000000
+check {LT: 15.00}
+
+# Thermostat sends a Read-Data request for MsgID 24 (type 0, temperature 10.0)
+# Even though 10.0 < LT (15.0), Read-Data must not be modified or converted to Invalid-Data
+Thermostat.tx = 0x00180000
+Thermostat.temperature = 10.0
+Thermostat.interval = 0.15
+
+go 5000000
+check {T[08]0180A00}
+check {B[4C]0180000}
+check {A[4C]018....} ""

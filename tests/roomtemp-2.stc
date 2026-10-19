@@ -23,6 +23,7 @@ Thermostat.temperature = 3.25
 go 5000000
 check {T[19]0180340}
 check {R[19]0181580}
+check {A[5D]0180340}
 
 # Exact limit value (5.0) should pass through and become new last valid
 mark
@@ -30,11 +31,22 @@ Thermostat.temperature = 5.0
 go 7000000
 check {B[5D]0180500}
 
+# Change LT to 15.0: invalidates old lastroomtemp (5.0)
+# A reading of 10.0 is below 15.0 and should send Invalid-Data, not the stale 5.0
+mark
+Serial.tx = "LT=15.0\r"
+Thermostat.temperature = 10.0
+go 9000000
+check {LT: 15.00}
+check {T[19]0180A00}
+check {R[2A]0180A00}
+check {A[5D]0180A00}
+
 # Disable limit with LT=0: 3.25 should now pass through
 mark
 Serial.tx = "LT=0\r"
 Thermostat.temperature = 3.25
-go 9000000
+go 11000000
 check {LT: 0.00}
 check {B[5D]0180340}
 

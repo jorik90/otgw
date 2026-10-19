@@ -7,19 +7,19 @@ load boiler.stc
 
 go 1500000
 clearalttable
-# Set upper bound cap to 80 (higher than boiler's 75) while default max=90 is active
-Serial.tx = "HM=80\r"
+# Set upper bound cap to 15 (below boiler's min=20) while default min=10 is active
+Serial.tx = "HM=15\r"
 
 go 2500000
-check {HM: 80}
+check {HM: 15}
 
 Thermostat.tx = 0x80310000
 Thermostat.interval = 0.15
 
-# Boiler's 75 is below HM=80: no modification
+# Boiler reports max=75, min=20. Cap (15) < boiler min (20) -> clamped to min (20, 0x14)
 go 4500000
 check {B[4C]0314B14}
-check {A[4C]031....} ""
+check {A[4C]0311414}
 
 # Set upper bound cap to 60 (0x3C): response capped to 60
 mark
@@ -29,7 +29,7 @@ check {HM: 60}
 check {B[4C]0314B14}
 check {A[4C]0313C14}
 
-# Equal to boiler's 75: no modification
+# Set upper bound cap to 75 (equal to boiler's 75): no modification
 mark
 Serial.tx = "HM=75\r"
 go 8500000

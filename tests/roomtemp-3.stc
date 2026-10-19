@@ -19,6 +19,7 @@ Thermostat.temperature = 2.0
 go 4000000
 check {T[19]0180200}
 check {R[2A]0180200}
+check {A[5D]0180200}
 
 # Once a valid reading arrives, subsequent low readings use that valid value
 mark
@@ -31,4 +32,5 @@ Thermostat.temperature = 1.0
 go 8000000
 check {T[19]0180100}
 check {R[19]0181300}
+check {A[5D]0180100}
 

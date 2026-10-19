@@ -1262,6 +1262,17 @@ WaitConvert	btfsc	ADCON0,GO	;Check that A/D conversion is finished
 		movwf	chboundmax
 		bsf	NoLastRoomTemp	;No valid room temperature seen yet
 
+		movlw	101
+		subwf	roomtemplimit1,W
+		skpc
+		bra	CheckCHBound
+		clrf	roomtemplimit1
+		clrf	roomtemplimit2
+CheckCHBound	movlw	101
+		subwf	chboundmax,W
+		skpnc
+		clrf	chboundmax
+
 		banksel	RCSTA		;Bank 3
 		btfss	FailSafeMode
 		bsf	RCSTA,CREN	;Enable serial receive
@@ -3119,7 +3130,9 @@ MessageID24	btfsc	MsgResponse
 		movfw	fakeroomtemp2
 		call	setbyte4
 		goto	messagewrite
-MsgID24CheckLim	btfsc	AlternativeUsed
+MsgID24CheckLim	btfss	MsgWriteOp
+		return
+		btfsc	AlternativeUsed
 		return			;Only filter genuine thermostat requests
 		banksel	roomtemplimit1	;Bank 1
 		movfw	roomtemplimit1
@@ -3154,7 +3167,9 @@ MsgID24Discard	btfsc	NoLastRoomTemp
 		goto	StoreValue
 MsgID24Invalid	movlb	0		;Bank 0
 		movlw	T_INV
-		goto	setbyte1
+		call	setbyte1
+		bsf	OverrideUsed
+		return
 
 ;Return the outside temperature, if specified via the serial interface
 MessageID27	btfsc	ExternalSensor	;Not using an external sensor
@@ -3230,8 +3245,14 @@ MessageID49	btfss	MsgResponse
 		skpnc			;Carry set if byte3 >= chboundmax
 		skpnz			;And non-zero if byte3 > chboundmax
 		goto	WordResponse	;Boiler max <= configured bound
-		subwf	byte3,W		;W = byte3 - (byte3 - chboundmax) = chboundmax
-		call	setbyte3
+		subwf	byte3,W		;W = chboundmax
+		subwf	byte4,W		;W = byte4 - chboundmax
+		skpc			;Carry set if byte4 >= chboundmax
+		bra	UseBoundMax	;byte4 < chboundmax
+		movfw	byte4		;byte4 >= chboundmax, clamp to byte4
+		bra	SetBoundMax
+UseBoundMax	subwf	byte4,W		;W = byte4 - (byte4 - chboundmax) = chboundmax
+SetBoundMax	call	setbyte3
 		goto	WordResponse
 
 ;Pass on user defined boundaries for domestic hot water to the boiler
@@ -4428,6 +4449,7 @@ SetRoomTempLim	call	GetPercentArg
 		movwf	roomtemplimit1
 		movfw	float2
 		movwf	roomtemplimit2
+		bsf	NoLastRoomTemp	;Reset last valid room temp
 		movlb	0		;Bank 0
 		movlw	RoomTempLimit	;EEPROM address
 		call	StoreFloat	;Store a float value in EEPROM

@@ -18,6 +18,7 @@ check {LT: 5.00}
 # Negative temperature before any valid reading: converted to Invalid-Data
 check {T[19]018FD80}
 check {R[2A]018FD80}
+check {A[5D]018FD80}
 
 # Valid positive temperature arrives: passes through and becomes last valid
 mark
@@ -31,6 +32,7 @@ Thermostat.temperature = -2.5
 go 7000000
 check {T[19]018FD80}
 check {R[19]0181480}
+check {A[5D]018FD80}
 
 # Value storage in summary report reflects replaced valid temperature
 mark

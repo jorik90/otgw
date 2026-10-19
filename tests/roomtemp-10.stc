@@ -1,0 +1,30 @@
+test "unprogrammed/erased EEPROM (0xFF) resets RoomTempLimit and CHBoundMax to 0"
+
+constraint p16f1847
+
+load boiler.stc
+Boiler.response = 0x50180000
+
+# Pre-populate EEPROM at 0xC0..0xC2 with 0xFF
+loadee eeprom-ff.hex
+
+Thermostat.tx = 0x10180000
+Thermostat.interval = 0.15
+Thermostat.temperature = 20.0
+
+go 1500000
+clearalttable
+
+# Query PR=J and PR=H: should be sanitized to 0.00 and 0, not 0xFF
+Serial.tx = "PR=J\r"
+Serial.tx = "PR=H\r"
+
+go 3000000
+check {PR: J=0.00}
+check {PR: H=0}
+
+# Room temperature 20.0 passes through to boiler unmodified
+go 5000000
+check {B[5D]0181400}
+check {A[5D]018....} ""
+
