@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       gputils: "http://downloads.sourceforge.net/\
         project/gputils/gputils/1.5.0/gputils-1.5.2.tar.bz2"
@@ -37,6 +39,8 @@ jobs:
 
       - name: Check out the code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Build the firmware
         run: make gateway.hex diagnose.hex interface.hex
@@ -80,3 +84,57 @@ jobs:
             interface.cod
             interface.lst
             interface.map
+
+      - name: Prepare release metadata and changelog
+        id: release_info
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+        run: |
+          python3 tools/extract_release_info.py
+
+      - name: Create or update GitHub Release
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.release_info.outputs.tag }}"
+          TITLE="${{ steps.release_info.outputs.title }}"
+          PRERELEASE="${{ steps.release_info.outputs.prerelease }}"
+
+          # Fetch GitHub auto-generated notes (commits & PRs) and append to release notes
+          GH_NOTES=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            -f target_commitish="$GITHUB_SHA" \
+            -q .body 2>/dev/null || true)
+
+          if [ -n "$GH_NOTES" ]; then
+            printf "\n\n%s\n" "$GH_NOTES" >> release_notes.md
+          fi
+
+          PRERELEASE_FLAG=""
+          if [ "$PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          FILES="gateway.hex diagnose.hex interface.hex"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # If triggered from a branch push, update git tag to current commit
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            git tag -f "$TAG" "$GITHUB_SHA"
+            git push -f origin "$TAG"
+          fi
+
+          # Create release or update existing release assets and notes
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists, updating notes and assets..."
+            gh release edit "$TAG" --title "$TITLE" --notes-file release_notes.md $PRERELEASE_FLAG
+            gh release upload "$TAG" $FILES --clobber
+          else
+            echo "Creating release $TAG..."
+            gh release create "$TAG" $FILES \
+              --title "$TITLE" \
+              --notes-file release_notes.md \
+              $PRERELEASE_FLAG
+          fi
